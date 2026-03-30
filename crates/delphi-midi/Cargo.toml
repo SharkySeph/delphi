@@ -1,0 +1,8 @@
+[package]
+name = "delphi-midi"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+delphi-core = { workspace = true }
+midly = "0.5"

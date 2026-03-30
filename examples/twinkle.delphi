@@ -1,0 +1,68 @@
+#!/usr/bin/env python3
+# ============================================================
+# Twinkle, Twinkle, Little Star — Simple 2-Track Test
+# ============================================================
+# A clean, recognizable melody with bass accompaniment.
+# Use this to test audio balance and playback.
+#
+# Run: PYTHONPATH=python .venv/bin/python examples/twinkle.delphi
+# ============================================================
+
+from delphi import Song, Track, ensure_soundfont
+
+ensure_soundfont()
+
+song = Song("Twinkle Twinkle Little Star",
+            tempo=100,
+            key="C major",
+            time_sig=(4, 4))
+
+# ── Melody (Piano) ──────────────────────────────────────────
+# Standard arrangement in C major, quarter notes
+melody = """
+C4:q C4:q G4:q G4:q  A4:q A4:q G4:h
+F4:q F4:q E4:q E4:q  D4:q D4:q C4:h
+
+G4:q G4:q F4:q F4:q  E4:q E4:q D4:h
+G4:q G4:q F4:q F4:q  E4:q E4:q D4:h
+
+C4:q C4:q G4:q G4:q  A4:q A4:q G4:h
+F4:q F4:q E4:q E4:q  D4:q D4:q C4:h
+"""
+
+song.add_track(Track(
+    name="Melody",
+    notation=melody,
+    program="piano",
+    velocity=90,
+))
+
+# ── Bass (Acoustic Bass) ────────────────────────────────────
+# Root notes, half notes — simple and supportive
+bass = """
+C2:h G2:h  F2:h C2:h
+F2:h C2:h  G2:h C2:h
+
+C2:h F2:h  C2:h G2:h
+C2:h F2:h  C2:h G2:h
+
+C2:h G2:h  F2:h C2:h
+F2:h C2:h  G2:h C2:h
+"""
+
+song.add_track(Track(
+    name="Bass",
+    notation=bass,
+    program="acoustic bass",
+    velocity=60,
+))
+
+print(song)
+print()
+
+try:
+    print("Playing (Ctrl+C to stop)...")
+    song.play()
+    print("Done.")
+except KeyboardInterrupt:
+    print("\nStopped.")

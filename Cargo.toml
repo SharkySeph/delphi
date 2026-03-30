@@ -1,0 +1,18 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/delphi-core",
+    "crates/delphi-midi",
+    "crates/delphi-engine",
+    "crates/delphi-py",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+[workspace.dependencies]
+delphi-core = { path = "crates/delphi-core" }
+delphi-midi = { path = "crates/delphi-midi" }
+delphi-engine = { path = "crates/delphi-engine" }
