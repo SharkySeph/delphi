@@ -393,7 +393,7 @@ HELP_TEXT = """
   Fine:      ... fine ... DC       Repeat to fine then stop
   Volta:     | A | B [1 C | [2 D | 1st/2nd endings
 
-\033[1;33m━━ Track Effects ━━\033[0m
+\033[1;33m━━ Track Effects ━━\033[0m  (use on Track objects: t = Track(...); t.gain(0.8))
   .gain(0.8)    Volume (0-2)        .pan(0.3)     Stereo position
   .reverb(0.5)  Reverb amount       .delay(0.3)   Echo effect
   .transpose(2) Shift semitones     .rev()        Reverse pattern
@@ -418,9 +418,19 @@ HELP_TEXT = """
 
 # ── REPL Entry Point ─────────────────────────────────────────
 
-def run_repl():
-    """Launch the interactive Delphi REPL."""
+def run_repl(project_dir: str | None = None):
+    """Launch the interactive Delphi REPL.
+
+    Args:
+        project_dir: Path to a Delphi project directory (with delphi.toml).
+                     If provided, the project's settings are loaded and its
+                     directory becomes the working directory.
+    """
     print(BANNER)
+
+    # Load project if available
+    if project_dir:
+        _load_project(project_dir)
 
     # Persistent history across sessions
     history_path = os.path.expanduser("~/.delphi/repl_history")
@@ -555,18 +565,128 @@ def run_repl():
             print(f"\033[31mError:\033[0m {e}")
 
 
+# ── Project Loading ───────────────────────────────────────────
+
+def _load_project(project_dir: str) -> None:
+    """Load a Delphi project: read delphi.toml and apply settings."""
+    import os as _os
+
+    toml_path = _os.path.join(project_dir, "delphi.toml")
+    if not _os.path.exists(toml_path):
+        return
+
+    # Parse the TOML (simple key=value parser, no dependency needed)
+    config = _parse_simple_toml(toml_path)
+
+    project_name = config.get("project", {}).get("name", "")
+    settings = config.get("settings", {})
+
+    if project_name:
+        print(f"  \033[1mProject:\033[0m {project_name}")
+
+    if "tempo" in settings:
+        try:
+            delphi.tempo(float(settings["tempo"]))
+        except (ValueError, TypeError):
+            pass
+    if "key" in settings:
+        delphi.key(str(settings["key"]))
+    if "time_sig" in settings:
+        ts = str(settings["time_sig"])
+        if "/" in ts:
+            num, den = ts.split("/", 1)
+            try:
+                delphi.time_sig(int(num.strip()), int(den.strip()))
+            except (ValueError, TypeError):
+                pass
+    if "soundfont" in settings and str(settings["soundfont"]).strip():
+        delphi.set_soundfont(str(settings["soundfont"]).strip())
+
+    # List .delphi files available
+    scripts = [f for f in _os.listdir(project_dir)
+               if f.endswith((".delphi", ".py")) and not f.startswith(".")]
+    if scripts:
+        print(f"  \033[1mFiles:\033[0m {', '.join(sorted(scripts))}")
+
+    print()
+
+
+def _parse_simple_toml(path: str) -> dict:
+    """Minimal TOML parser for delphi.toml (handles sections and key=value)."""
+    config: dict = {}
+    current_section = config
+
+    with open(path) as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if line.startswith("[") and line.endswith("]"):
+                section_name = line[1:-1].strip()
+                config[section_name] = {}
+                current_section = config[section_name]
+            elif "=" in line:
+                key, _, value = line.partition("=")
+                key = key.strip()
+                value = value.strip()
+                # Parse quoted strings (find matching close quote, ignore rest)
+                if value.startswith('"'):
+                    inner = value[1:]
+                    end = inner.find('"')
+                    value = inner[:end] if end >= 0 else inner
+                elif value.startswith("'"):
+                    inner = value[1:]
+                    end = inner.find("'")
+                    value = inner[:end] if end >= 0 else inner
+                # Try numeric conversion
+                else:
+                    # Strip inline comments for unquoted values
+                    if "#" in value:
+                        value = value[:value.index("#")].strip()
+                    try:
+                        value = int(value)
+                    except ValueError:
+                        try:
+                            value = float(value)
+                        except ValueError:
+                            pass
+                current_section[key] = value
+
+    return config
+
+
 # ── Notation Detection ────────────────────────────────────────
 
 import re as _re
 
+# All known articulation / ornament dot-suffixes (from notation.py)
+_DOT_SUFFIXES = (
+    "stac", "staccato", "stacc", "staccatissimo",
+    "ten", "tenuto", "port", "portato",
+    "acc", "accent", "marc", "marcato",
+    "ferm", "fermata", "ghost", "leg", "legato",
+    "pizz", "pizzicato", "mute",
+    "tr", "trill", "mord", "mordent", "lmord",
+    "turn", "gruppetto", "grace", "acciaccatura", "appoggiatura",
+    "trem", "tremolo", "gliss", "glissando", "arp", "arpeggio", "roll",
+)
+_DOT_SUFFIX_RE = r'(?:\.(?:' + '|'.join(_DOT_SUFFIXES) + r'))?'
+
+# Duration suffixes: :w :h :q :e :s etc.
+_DUR_RE = r'(?::[whqes](?:\.{0,2})?)?'
+
 _NOTATION_RE = _re.compile(
     r'^[\s|]*'  # optional leading whitespace/pipes
     r'(?:'
-    r'[A-Ga-g][#b]{0,2}\d'   # note with octave (C4, F#5, Bb3)
-    r'|[A-Ga-g][#b]{0,2}(?:maj|min|m|dim|aug|sus|add|alt|7|9|11|13|6|5|°|ø|\+)'  # chord
-    r'|(?:kick|snare|hihat|bd|sd|hh|oh|ch|rd|cr|tom|clap|rim|cp)'  # drums
+    r'[A-Ga-g][#b]{0,2}\d' + _DOT_SUFFIX_RE + _DUR_RE +  # note with octave: C4, F#5.stac:q
+    r'|[A-Ga-g][#b]{0,2}(?:maj|min|m|dim|aug|sus|add|alt|7|9|11|13|6|5|°|ø|\+)\S*'  # chord with quality: Cmaj7, Am
+    r'|[A-Ga-g][#b]{0,2}(?=[\s|]|$)'  # bare note as chord shorthand: C, F, Bb (in bar context)
+    r'|(?:kick|snare|hihat|bd|sd|hh|oh|ch|rd|cr|tom|clap|rim|cp)' + _DOT_SUFFIX_RE + _DUR_RE +
     r'|\|'      # bar lines
     r'|[.~r]'   # rests
+    r'|cresc\([^)]*\)'   # crescendo
+    r'|dim\([^)]*\)'     # diminuendo
+    r'|breath|caesura'    # breaths
     r'|\s+'
     r')+'
     r'[\s|]*$'
@@ -575,9 +695,13 @@ _NOTATION_RE = _re.compile(
 
 def _looks_like_notation(text: str) -> bool:
     """Check if text looks like raw musical notation (not Python code)."""
-    # Must not look like Python: no = ( ) import def class keywords
-    if any(kw in text for kw in ('=', '(', ')', 'import ', 'def ', 'class ', 'from ')):
+    # Must not look like Python assignments or definitions
+    if any(kw in text for kw in ('=', 'import ', 'def ', 'class ', 'from ')):
         return False
+    # Allow parens only if they look like notation functions (cresc, dim, euclidean)
+    if '(' in text or ')' in text:
+        # Only pass through if the entire text matches notation regex
+        pass
     # Must not be a known command
     if text in ('help', 'quit', 'exit', 'instruments', 'sf', 'songs', 'tracks'):
         return False

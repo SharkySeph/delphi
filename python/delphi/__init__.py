@@ -43,7 +43,13 @@ from delphi.soundfont import (
     soundfont_info,
 )
 
-__version__ = "0.1.0"
+
+def run_studio(target=None):
+    """Launch Delphi Studio TUI (lazy import to avoid loading prompt_toolkit eagerly)."""
+    from delphi.studio import run_studio as _run
+    return _run(target)
+
+__version__ = "0.2.0"
 
 __all__ = [
     "tempo",
@@ -77,4 +83,5 @@ __all__ = [
     "get_soundfont_path",
     "ensure_soundfont",
     "soundfont_info",
+    "run_studio",
 ]

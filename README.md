@@ -47,21 +47,35 @@ song.export("my_song.mid")
 ### From source
 
 ```bash
-git clone https://github.com/pianomanvii/delphi.git
+git clone https://github.com/SharkySeph/delphi.git
+cd delphi
+./delphi --version
+```
+
+That's it. The `./delphi` launcher script automatically:
+1. Creates a Python virtual environment (`.venv/`) if one doesn't exist
+2. Installs `maturin` if missing
+3. Builds the Rust engine when source files have changed
+4. Installs `prompt_toolkit` for the REPL
+5. Runs the command
+
+No manual `source .venv/bin/activate` or `maturin develop` needed.
+
+> **Tip:** Add the repo directory to your `PATH` to run `delphi` from anywhere,
+> or create a symlink: `ln -s /path/to/delphi/delphi ~/.local/bin/delphi`
+
+### Manual setup (alternative)
+
+If you prefer to manage the environment yourself:
+
+```bash
+git clone https://github.com/SharkySeph/delphi.git
 cd delphi
 python -m venv .venv
 source .venv/bin/activate
 pip install maturin
 maturin develop
-```
-
-This builds the Rust engine and installs Delphi in development mode.
-
-### Verify installation
-
-```bash
 delphi --version
-# delphi 0.1.0
 ```
 
 ## Quick Start
@@ -69,7 +83,7 @@ delphi --version
 ### Launch the REPL
 
 ```bash
-delphi
+./delphi
 ```
 
 Type notation directly and hear it play:
@@ -82,11 +96,52 @@ Type notation directly and hear it play:
   ♪ Playing chord progression...
 ```
 
+### Create a project
+
+```bash
+./delphi init my-song
+cd my-song
+```
+
+This scaffolds a project directory:
+
+```
+my-song/
+├── delphi.toml       # Project config (tempo, key, soundfont)
+├── main.delphi       # Starter script
+├── patterns/         # Reusable patterns
+└── exports/          # Rendered MIDI/WAV output
+```
+
+Edit `main.delphi` and run it:
+
+```bash
+./delphi main.delphi
+```
+
+Or open the project in the REPL (loads settings from `delphi.toml`):
+
+```bash
+./delphi open .
+```
+
 ### Run a script
 
 ```bash
-delphi examples/twinkle.delphi
+./delphi examples/twinkle.delphi
 ```
+
+### CLI commands
+
+| Command | Description |
+|---------|-------------|
+| `./delphi` | Launch REPL (auto-detects project in cwd) |
+| `./delphi init <name>` | Create a new Delphi project |
+| `./delphi open [path]` | Open a project directory in the REPL |
+| `./delphi run <file>` | Run a `.delphi` script |
+| `./delphi <file>` | Run a script (shorthand) |
+| `./delphi --version` | Show version |
+| `./delphi --help` | Show help |
 
 ### Your first script
 
@@ -106,7 +161,7 @@ export("hello.mid", "| C | Am | F | G |")
 Run it:
 
 ```bash
-delphi hello.delphi
+./delphi hello.delphi
 ```
 
 ## Documentation
@@ -118,6 +173,7 @@ delphi hello.delphi
 | [Composition Guide](docs/composition.md) | Patterns, Sections, Arrangements for large pieces |
 | [Theory Module](docs/theory.md) | Scales, chords, notes — music theory as code |
 | [REPL Guide](docs/repl.md) | Interactive environment features and keybindings |
+| [Jupyter Notebooks](docs/notebook.md) | Using Delphi in Jupyter with inline audio |
 | [Examples](examples/) | Complete example scripts |
 
 ## Examples
@@ -186,6 +242,30 @@ song.play()
 song.export("my_song.mid")
 ```
 
+### Jupyter Notebook
+
+```python
+%load_ext delphi.notebook
+```
+
+```python
+%%delphi
+C4:q E4:q G4:q C5:h
+```
+
+```python
+%%delphi --program piano --tempo 120
+| Cmaj7 | Am7 | Fmaj7 | G7 |
+```
+
+```python
+song = Song("My Song", tempo=120)
+song.track("piano", "C4:q E4:q G4:h", program="piano")
+song.to_audio()   # inline audio player
+```
+
+Install notebook support: `pip install delphi[notebook]`
+
 ## Project Structure
 
 ```
@@ -201,12 +281,14 @@ delphi/
 │   ├── export.py         # MIDI/WAV export
 │   ├── soundfont.py      # SoundFont management
 │   ├── repl.py           # Interactive REPL
+│   ├── notebook.py       # Jupyter/IPython extension
 │   └── cli.py            # Command-line interface
 ├── crates/               # Rust engine
 │   ├── delphi-core/      # Music theory types
 │   ├── delphi-midi/      # MIDI file export
 │   ├── delphi-engine/    # Audio synthesis & scheduling
 │   └── delphi-py/        # PyO3 Python bindings
+├── delphi                # ← Launcher script (start here)
 ├── examples/             # Example scripts
 │   ├── hello.delphi
 │   ├── twinkle.delphi
@@ -218,8 +300,10 @@ delphi/
 
 ## Building & Testing
 
+The `./delphi` launcher handles building automatically. For manual builds:
+
 ```bash
-# Build Rust engine + install Python package
+source .venv/bin/activate
 maturin develop
 
 # Run Python tests
