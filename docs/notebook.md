@@ -4,15 +4,22 @@ Delphi includes an IPython extension that brings music scripting into Jupyter no
 
 ## Installation
 
-```bash
-pip install delphi[notebook]
-```
-
-Or if you already have Delphi installed:
+If you installed Delphi via the install script, activate the Delphi venv and add Jupyter:
 
 ```bash
+source ~/.local/share/delphi/venv/bin/activate
 pip install ipython jupyter
 ```
+
+If you're developing from source:
+
+```bash
+source .venv/bin/activate
+pip install ipython jupyter
+```
+
+> **Note:** Do not run `pip install delphi` — that installs an unrelated package from PyPI.
+> Delphi is distributed via [GitHub Releases](https://github.com/SharkySeph/delphi/releases).
 
 ## Getting Started
 

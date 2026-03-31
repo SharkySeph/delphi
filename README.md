@@ -48,40 +48,48 @@ song.export("my_song.mid")
 ### Requirements
 
 - Python ≥ 3.10
-- Rust toolchain (for building the native engine)
-- Linux: ALSA development libraries (`sudo apt install libasound2-dev`)
+- Linux: ALSA runtime library (`sudo apt install libasound2` or `sudo dnf install alsa-lib`)
+- macOS / Windows: No extra dependencies
 
-### From source
+### Quick install (recommended)
 
+Run the one-liner for your OS — no Rust or build tools needed:
+
+**Linux:**
 ```bash
-git clone https://github.com/SharkySeph/delphi.git
-cd delphi
-./delphi --version
+curl -sSf https://raw.githubusercontent.com/SharkySeph/delphi/main/deploy/install.sh | bash
 ```
 
-That's it. The `./delphi` launcher script automatically:
-1. Creates a Python virtual environment (`.venv/`) if one doesn't exist
-2. Installs `maturin` if missing
-3. Builds the Rust engine when source files have changed
-4. Installs `prompt_toolkit` for the REPL
-5. Runs the command
+**macOS:**
+```bash
+curl -sSf https://raw.githubusercontent.com/SharkySeph/delphi/main/deploy/install-macos.sh | bash
+```
 
-No manual `source .venv/bin/activate` or `maturin develop` needed.
+**Windows (PowerShell):**
+```powershell
+irm https://raw.githubusercontent.com/SharkySeph/delphi/main/deploy/install-windows.ps1 | iex
+```
 
-> **Tip:** Add the repo directory to your `PATH` to run `delphi` from anywhere,
-> or create a symlink: `ln -s /path/to/delphi/delphi ~/.local/bin/delphi`
+The installer will:
+1. Find Python 3.10+ on your system
+2. Create a virtual environment (`~/.local/share/delphi/venv`)
+3. Download and install the pre-built wheel from GitHub Releases (Rust engine included)
+4. Add the `delphi` command to your PATH
 
-### Manual setup (alternative)
+After installing, restart your terminal and run:
+```bash
+delphi --version
+```
 
-If you prefer to manage the environment yourself:
+### Manual install (from release wheel)
+
+If you prefer to manage it yourself, download the wheel for your platform from
+[GitHub Releases](https://github.com/SharkySeph/delphi/releases) and install it:
 
 ```bash
-git clone https://github.com/SharkySeph/delphi.git
-cd delphi
-python -m venv .venv
-source .venv/bin/activate
-pip install maturin
-maturin develop
+python3 -m venv ~/.local/share/delphi/venv
+source ~/.local/share/delphi/venv/bin/activate
+pip install /path/to/delphi-0.6.0-cp310-abi3-manylinux_2_28_x86_64.whl
 delphi --version
 ```
 
@@ -90,7 +98,7 @@ delphi --version
 ### Launch the REPL
 
 ```bash
-./delphi
+delphi
 ```
 
 Type notation directly and hear it play:
@@ -106,7 +114,7 @@ Type notation directly and hear it play:
 ### Create a project
 
 ```bash
-./delphi init my-song
+delphi init my-song
 cd my-song
 ```
 
@@ -123,34 +131,34 @@ my-song/
 Edit `main.delphi` and run it:
 
 ```bash
-./delphi main.delphi
+delphi main.delphi
 ```
 
 Or open the project in the REPL (loads settings from `delphi.toml`):
 
 ```bash
-./delphi open .
+delphi open .
 ```
 
 ### Run a script
 
 ```bash
-./delphi examples/twinkle.delphi
+delphi examples/twinkle.delphi
 ```
 
 ### CLI commands
 
 | Command | Description |
 |---------|-------------|
-| `./delphi` | Launch REPL (auto-detects project in cwd) |
-| `./delphi studio` | Open Delphi Studio (terminal notebook IDE) |
-| `./delphi studio <name>` | Open a project or `.dstudio` file in Studio |
-| `./delphi init <name>` | Create a new Delphi project |
-| `./delphi open [path]` | Open a project directory in the REPL |
-| `./delphi run <file>` | Run a `.delphi` script |
-| `./delphi <file>` | Run a script (shorthand) |
-| `./delphi --version` | Show version |
-| `./delphi --help` | Show help |
+| `delphi` | Launch REPL (auto-detects project in cwd) |
+| `delphi studio` | Open Delphi Studio (terminal notebook IDE) |
+| `delphi studio <name>` | Open a project or `.dstudio` file in Studio |
+| `delphi init <name>` | Create a new Delphi project |
+| `delphi open [path]` | Open a project directory in the REPL |
+| `delphi run <file>` | Run a `.delphi` script |
+| `delphi <file>` | Run a script (shorthand) |
+| `delphi --version` | Show version |
+| `delphi --help` | Show help |
 
 ### Switching instruments
 
@@ -199,7 +207,7 @@ export("hello.mid", "| C | Am | F | G |")
 Run it:
 
 ```bash
-./delphi hello.delphi
+delphi hello.delphi
 ```
 
 ### Delphi Studio
@@ -207,9 +215,9 @@ Run it:
 A terminal notebook IDE for composing multi-track songs — think Jupyter meets a DAW.
 
 ```bash
-./delphi studio                    # New empty notebook
-./delphi studio my-song            # Open project as notebook
-./delphi studio song.dstudio       # Open saved notebook file
+delphi studio                    # New empty notebook
+delphi studio my-song            # Open project as notebook
+delphi studio song.dstudio       # Open saved notebook file
 ```
 
 ```
@@ -361,7 +369,12 @@ song.track("piano", "C4:q E4:q G4:h", program="piano")
 song.to_audio()   # inline audio player
 ```
 
-Install notebook support: `pip install delphi[notebook]`
+Install notebook support:
+
+```bash
+source ~/.local/share/delphi/venv/bin/activate
+pip install ipython jupyter
+```
 
 ## Project Structure
 
@@ -386,7 +399,12 @@ delphi/
 │   ├── delphi-midi/      # MIDI file export
 │   ├── delphi-engine/    # Audio synthesis & scheduling
 │   └── delphi-py/        # PyO3 Python bindings
-├── delphi                # ← Launcher script (start here)
+├── delphi                # ← Dev launcher script (builds from source)
+├── deploy/               # End-user install scripts
+│   ├── install.sh        # Universal OS-detecting dispatcher
+│   ├── install-linux.sh  # Linux installer
+│   ├── install-macos.sh  # macOS installer
+│   └── install-windows.ps1  # Windows installer
 ├── examples/             # Example scripts
 │   ├── hello.delphi
 │   ├── twinkle.delphi
@@ -396,12 +414,30 @@ delphi/
     └── python/           # Python test suite
 ```
 
-## Building & Testing
+## Development
 
-The `./delphi` launcher handles building automatically. For manual builds:
+If you want to contribute or build from source, you'll need:
+
+- Python ≥ 3.10
+- Rust toolchain (install via [rustup](https://rustup.rs))
+- Linux: ALSA development headers (`sudo apt install libasound2-dev`)
+
+The `./delphi` launcher handles everything automatically:
 
 ```bash
+git clone https://github.com/SharkySeph/delphi.git
+cd delphi
+./delphi --version
+```
+
+It will create a `.venv/`, install `maturin`, build the Rust engine, and run the CLI. No manual setup needed.
+
+For manual builds:
+
+```bash
+python -m venv .venv
 source .venv/bin/activate
+pip install maturin
 maturin develop
 
 # Run Python tests
