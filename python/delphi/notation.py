@@ -38,9 +38,14 @@ NOTE_RE = re.compile(
     r'^([A-Ga-g])(##?|bb?)?(-?\d+)(?::(\w+\.?\.?))?(?:!(\w+))?(?:\.(\w+))?$'
 )
 
-# Chord pattern: root + optional accidental + quality
+# Chord pattern: root + optional accidental + quality + optional octave
 CHORD_RE = re.compile(
-    r'^([A-Ga-g])(##?|bb?)?(maj7|maj9|maj11|maj13|maj|m7b5|mMaj7|mM7|min7|min9|min11|min6|min|m69|m6|m7|m9|m11|m13|m|dim7|dim|aug7|aug|7sus4|7sus2|sus2|sus4|sus|add9|add11|add2|69|6|7|9|11|13|5|alt|\+|°7|°|ø7|ø)?$'
+    r'^([A-Ga-g])(##?|bb?)?(maj7|maj9|maj11|maj13|maj|m7b5|mMaj7|mM7|min7|min9|min11|min6|min|m69|m6|m7|m9|m11|m13|m|dim7|dim|aug7|aug|7sus4|7sus2|sus2|sus4|sus|add9|add11|add2|69|6|7|9|11|13|5|alt|\+|°7|°|ø7|ø)?(-?\d+)?$'
+)
+
+# Bass note for slash chords: letter + optional accidental + optional octave
+BASS_NOTE_RE = re.compile(
+    r'^([A-Ga-g])(##?|bb?)?(-?\d+)?$'
 )
 
 # Euclidean rhythm pattern: token(beats,steps) or token(beats,steps,offset)
@@ -1031,17 +1036,36 @@ def _apply_articulation(evt: Event, articulation: str) -> None:
 def _try_parse_chord(token: str, tick: int, default_duration: int,
                      default_velocity: int) -> Optional[Event]:
     """Try to parse a token as a chord, returning Event or None."""
-    m = CHORD_RE.match(token.split("!")[0].split(":")[0])
+    # Strip duration/dynamic suffixes before matching
+    chord_str = token.split("!")[0].split(":")[0]
+
+    # Check for slash chord (bass note): Am/E, C/G, Am4/E3
+    bass_midi = None
+    if "/" in chord_str:
+        chord_str, bass_str = chord_str.split("/", 1)
+
+    m = CHORD_RE.match(chord_str)
     if not m:
         return None
 
     root = m.group(1).upper()
     acc = m.group(2) or ""
     quality = m.group(3) or ""
+    octave = int(m.group(4)) if m.group(4) else 4  # default octave 4
 
-    root_midi = _note_to_midi(root, acc, 4)  # chords default to octave 4
+    root_midi = _note_to_midi(root, acc, octave)
     intervals = _chord_intervals(quality)
     midi_notes = [(root_midi + iv) for iv in intervals]
+
+    # Parse bass note for slash chords
+    if "/" in token.split("!")[0].split(":")[0]:
+        bm = BASS_NOTE_RE.match(bass_str)
+        if bm:
+            bass_pitch = bm.group(1).upper()
+            bass_acc = bm.group(2) or ""
+            bass_oct = int(bm.group(3)) if bm.group(3) else octave - 1
+            bass_midi = _note_to_midi(bass_pitch, bass_acc, bass_oct)
+            midi_notes.insert(0, bass_midi)
 
     vel = default_velocity
     if "!" in token:

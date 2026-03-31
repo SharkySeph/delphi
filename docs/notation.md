@@ -67,6 +67,45 @@ Bbsus4      Bb suspended 4th
 Eaug        E augmented
 ```
 
+### Chord Octave
+
+By default, chords are rooted at octave 4. Append an octave number to change the voicing:
+
+```
+Am4         A minor rooted at A4 (same as default)
+Am3         A minor rooted at A3 (lower voicing)
+G75         G dominant 7th rooted at G5
+Cmaj73      C major 7th rooted at C3
+```
+
+This works naturally alongside notes: `C4 G4 Am4 F4` plays two notes, a chord, and a note all in the same register.
+
+### Slash Chords (Bass Notes)
+
+Use `/` to specify a bass note below the chord — standard lead-sheet notation:
+
+```
+Am/E        A minor with E bass (first inversion)
+C/G         C major with G bass (second inversion)
+Cmaj7/B     C major 7th over B bass
+G7/F        G dominant 7th with F bass (third inversion)
+```
+
+The bass note defaults to one octave below the chord root. You can specify an exact octave:
+
+```
+Am/E3       A minor with E3 bass
+Am4/E3      A minor at octave 4 with E3 bass
+C/Bb2       C major with Bb2 bass
+```
+
+Slash chords combine with duration and dynamics like any chord:
+
+```
+Am/E:h!f    A minor over E bass, half note, forte
+| C | Am/E | F | G/B |    Slash chords in bar notation
+```
+
 ### Chord Qualities
 
 | Quality | Intervals | Example |

@@ -269,6 +269,7 @@ F#4:q G4:q A4:q B4:h
 | [Composition Guide](docs/composition.md) | Patterns, Sections, Arrangements for large pieces |
 | [Theory Module](docs/theory.md) | Scales, chords, notes — music theory as code |
 | [REPL Guide](docs/repl.md) | Interactive environment features and keybindings |
+| [Studio Guide](docs/studio.md) | Terminal notebook IDE for multi-track composition |
 | [Jupyter Notebooks](docs/notebook.md) | Using Delphi in Jupyter with inline audio |
 | [Examples](examples/) | Complete example scripts |
 

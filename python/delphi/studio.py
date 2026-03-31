@@ -41,7 +41,12 @@ import delphi
 from delphi.context import get_context
 from delphi.song import Song, Track, GM_INSTRUMENTS
 
-# Reuse the REPL's syntax highlighter and completer
+# Reuse the REPL's notation detector, syntax highlighter, and completer
+try:
+    from delphi.repl import _looks_like_notation
+except Exception:
+    _looks_like_notation = None
+
 try:
     from delphi.repl import DelphiLexer
     _LEXER = PygmentsLexer(DelphiLexer)
@@ -70,6 +75,8 @@ class Cell:
     channel: int = 0
     velocity: int = 80
     collapsed: bool = False
+    _run_state: str = field(default="empty", repr=False)  # empty|ready|ok|error|stale
+    _last_run_source: str = field(default="", repr=False)  # source at last run
 
     def to_dict(self) -> dict:
         d: dict = {"type": self.cell_type, "source": self.source}
@@ -225,15 +232,21 @@ class Notebook:
         """Execute a single cell and return output text."""
         source = cell.source.strip()
         if not source:
+            cell._run_state = "empty"
             return ""
 
         if cell.cell_type == "markdown":
+            cell._run_state = "ok"
             return ""
 
         if cell.cell_type == "notation":
-            return self._run_notation_cell(cell, namespace)
+            result = self._run_notation_cell(cell, namespace)
+        else:
+            result = self._run_code_cell(cell, namespace)
 
-        return self._run_code_cell(cell, namespace)
+        cell._last_run_source = cell.source
+        cell._run_state = "error" if result.startswith("✗") else "ok"
+        return result
 
     def _run_notation_cell(self, cell: Cell, namespace: dict) -> str:
         """Parse and play a notation cell."""
@@ -272,26 +285,91 @@ class Notebook:
             return f"✗ {e}"
 
     def _run_code_cell(self, cell: Cell, namespace: dict) -> str:
-        """Execute a code cell."""
+        """Execute a code cell with REPL-like notation auto-detection.
+
+        Each line is checked: if it looks like music notation, it's played
+        via play(). Otherwise, it's executed as Python. This mirrors the
+        REPL's behavior so users can mix code and notation freely.
+        """
         import io
         import contextlib
 
+        source = cell.source.strip()
+        if not source:
+            return ""
+
+        # First, try to run the whole cell as Python (fast path for pure code)
         buf = io.StringIO()
         try:
             with contextlib.redirect_stdout(buf):
                 try:
-                    result = eval(cell.source.strip(), namespace)
+                    result = eval(source, namespace)
                     if result is not None:
                         print(repr(result))
                 except SyntaxError:
-                    exec(cell.source.strip(), namespace)
+                    exec(source, namespace)
+            output = buf.getvalue().strip()
+            return output if output else "♪ OK"
         except KeyboardInterrupt:
             return "⏹ Stopped"
         except Exception:
+            pass
+
+        # Python failed — try line-by-line with notation auto-detection
+        if _looks_like_notation is None:
             return f"✗ {traceback.format_exc().splitlines()[-1]}"
 
-        output = buf.getvalue().strip()
-        return output if output else "♪ OK"
+        buf = io.StringIO()
+        played = 0
+        try:
+            code_block: list[str] = []
+
+            def _flush_code():
+                """Execute any accumulated Python lines."""
+                if not code_block:
+                    return
+                block = "\n".join(code_block)
+                code_block.clear()
+                with contextlib.redirect_stdout(buf):
+                    try:
+                        result = eval(block, namespace)
+                        if result is not None:
+                            print(repr(result))
+                    except SyntaxError:
+                        exec(block, namespace)
+
+            for line in source.splitlines():
+                stripped = line.strip()
+                if not stripped or stripped.startswith("#"):
+                    code_block.append(line)
+                    continue
+
+                if _looks_like_notation(stripped):
+                    _flush_code()
+                    delphi.play(stripped)
+                    played += 1
+                else:
+                    code_block.append(line)
+
+            _flush_code()
+
+        except KeyboardInterrupt:
+            return "⏹ Stopped"
+        except Exception:
+            # Give a helpful hint about what went wrong
+            err = traceback.format_exc().splitlines()[-1]
+            hint = ""
+            if "SyntaxError" in err:
+                hint = "\n  💡 Tip: Switch to a notation cell (Ctrl+T) for pure music notation"
+            return f"✗ {err}{hint}"
+
+        output_parts = []
+        text = buf.getvalue().strip()
+        if text:
+            output_parts.append(text)
+        if played:
+            output_parts.append(f"♪ Played {played} line{'s' if played > 1 else ''}")
+        return "\n".join(output_parts) if output_parts else "♪ OK"
 
     def run_all(self) -> list[str]:
         """Run all cells top-to-bottom, building a Song from notation cells."""
@@ -493,8 +571,10 @@ class StudioApp:
         self.message: str = ""         # status line message
         self._buffers: dict[int, Buffer] = {}
         self._confirm_delete: bool = False   # F8 pressed once → confirm
+        self._confirm_quit: bool = False     # Ctrl+Q pressed once → confirm
         self._playing: bool = False          # playback in progress
         self._play_thread: threading.Thread | None = None
+        self._dirty: bool = False            # unsaved changes
         self._build_app()
 
     # ── Buffer management ─────────────────────────────────────
@@ -511,6 +591,10 @@ class StudioApp:
 
     def _sync_source(self, cell: Cell, buf: Buffer) -> None:
         cell.source = buf.text
+        self._dirty = True
+        # Mark cell stale if it was previously run and source changed
+        if cell._run_state in ("ok", "error") and cell.source != cell._last_run_source:
+            cell._run_state = "stale"
 
     # ── Key bindings ──────────────────────────────────────────
 
@@ -520,38 +604,47 @@ class StudioApp:
         @kb.add("f5")
         def run_cell(event):
             self._confirm_delete = False
+            self._confirm_quit = False
             self._run_focused_cell()
             self._refresh_layout()
 
         @kb.add("f6")
         def run_all(event):
             self._confirm_delete = False
+            self._confirm_quit = False
             outputs = self.notebook.run_all()
             self.namespace = self.notebook._build_namespace()
             n_tracks = len(self.notebook.song.tracks) if self.notebook.song else 0
-            self.message = f"▶ Ran all cells — Song: {n_tracks} tracks"
+            self.message = f"▶ Ran all — {n_tracks} track{'s' if n_tracks != 1 else ''}"
             self._refresh_layout()
 
         @kb.add("f7")
         @kb.add("c-b")
         def add_cell(event):
             self._confirm_delete = False
+            self._confirm_quit = False
             after_id = None
             if self.notebook.cells and 0 <= self.focused_cell < len(self.notebook.cells):
                 after_id = self.notebook.cells[self.focused_cell].id
-            self.notebook.add_cell(cell_type="code", after=after_id)
+            # Default new cell type matches the current cell (usually what you want next)
+            current_type = "code"
+            if self.notebook.cells and 0 <= self.focused_cell < len(self.notebook.cells):
+                current_type = self.notebook.cells[self.focused_cell].cell_type
+            self.notebook.add_cell(cell_type=current_type, after=after_id)
             self.focused_cell = min(self.focused_cell + 1, len(self.notebook.cells) - 1)
-            self.message = "+ Added cell"
+            self._dirty = True
+            self.message = f"+ Added {current_type} cell (Ctrl+T to change type)"
             self._refresh_layout()
 
         @kb.add("f8")
         def delete_cell(event):
             if not self.notebook.cells:
                 return
+            self._confirm_quit = False
             if not self._confirm_delete:
                 cell = self.notebook.cells[self.focused_cell]
                 self._confirm_delete = True
-                self.message = f"Delete cell [{cell.id}]? Press F8 again to confirm"
+                self.message = f"Delete cell [{self.focused_cell + 1}]? Press F8 again to confirm"
                 self._refresh_layout()
                 return
             self._confirm_delete = False
@@ -560,6 +653,7 @@ class StudioApp:
             self.notebook.delete_cell(cell.id)
             if self.focused_cell >= len(self.notebook.cells):
                 self.focused_cell = max(0, len(self.notebook.cells) - 1)
+            self._dirty = True
             self.message = "− Deleted cell"
             self._refresh_layout()
 
@@ -572,13 +666,16 @@ class StudioApp:
         @kb.add("c-s")
         def save(event):
             self._confirm_delete = False
+            self._confirm_quit = False
             path = self.notebook.save()
+            self._dirty = False
             self.message = f"💾 Saved → {path}"
             self._refresh_layout()
 
         @kb.add("c-up")
         def focus_prev(event):
             self._confirm_delete = False
+            self._confirm_quit = False
             if self.focused_cell > 0:
                 self.focused_cell -= 1
                 self._refresh_layout()
@@ -586,6 +683,7 @@ class StudioApp:
         @kb.add("c-down")
         def focus_next(event):
             self._confirm_delete = False
+            self._confirm_quit = False
             if self.focused_cell < len(self.notebook.cells) - 1:
                 self.focused_cell += 1
                 self._refresh_layout()
@@ -597,6 +695,7 @@ class StudioApp:
             cell = self.notebook.cells[self.focused_cell]
             if self.notebook.move_cell(cell.id, -1):
                 self.focused_cell -= 1
+                self._dirty = True
                 self._refresh_layout()
 
         @kb.add("c-s-down")
@@ -606,6 +705,7 @@ class StudioApp:
             cell = self.notebook.cells[self.focused_cell]
             if self.notebook.move_cell(cell.id, +1):
                 self.focused_cell += 1
+                self._dirty = True
                 self._refresh_layout()
 
         @kb.add("c-t")
@@ -651,13 +751,19 @@ class StudioApp:
 
         @kb.add("c-q")
         def quit_app(event):
+            self._confirm_delete = False
+            if self._dirty and not self._confirm_quit:
+                self._confirm_quit = True
+                self.message = "⚠ Unsaved changes. Ctrl+Q again to quit, or Ctrl+S to save first"
+                self._refresh_layout()
+                return
             event.app.exit()
 
         @kb.add("f1")
         def show_help(event):
             self.message = (
-                "F5:Run  F6:RunAll  F7:Add  F8:Del  F9:Export  F10:Save  "
-                "Ctrl+P:Replay  Ctrl+C:Stop  Ctrl+E:Fold  Ctrl+Q:Quit"
+                "F5:Run cell  F6:Run all  F7:Add  F8:Delete  F9:Export  F10/Ctrl+S:Save │ "
+                "Ctrl+↑↓:Navigate  Ctrl+Shift+↑↓:Reorder  Ctrl+T:Type  Ctrl+E:Fold  Ctrl+P:Replay  Ctrl+Q:Quit"
             )
             self._refresh_layout()
 
@@ -697,6 +803,11 @@ class StudioApp:
                 self.message = f"✗ Cell [{cell.id}] error"
             finally:
                 self._playing = False
+                try:
+                    self.app.layout = self._build_layout()
+                    self._focus_current_cell()
+                except Exception:
+                    pass
                 self.app.invalidate()
 
         self._play_thread = threading.Thread(target=_do_run, daemon=True)
@@ -749,17 +860,17 @@ class StudioApp:
 
     def _build_status_bar(self):
         ctx = get_context()
-        s = self.notebook.settings
-        tempo_val = s.get("tempo", ctx.bpm)
-        key_val = s.get("key", ctx.key_name)
         title = self.notebook.title
         n_cells = len(self.notebook.cells)
         focus = self.focused_cell + 1 if self.notebook.cells else 0
+        dirty = " ●" if self._dirty else ""
 
+        # Show LIVE context — what the engine actually has, not notebook defaults
+        instrument_name = getattr(ctx, 'program_name', 'piano')
         status_text = (
-            f"  🎵 Delphi Studio — {title}"
-            f"    ♩={tempo_val}  {key_val}"
-            f"    Cell {focus}/{n_cells}"
+            f"  🎵 {title}{dirty}"
+            f"    ♩={int(ctx.bpm)}  {ctx.key_name}  🎹 {instrument_name}"
+            f"    [{focus}/{n_cells}]"
         )
         return Window(
             FormattedTextControl(status_text),
@@ -770,34 +881,72 @@ class StudioApp:
     def _build_cell_widget(self, cell: Cell, index: int):
         """Build the visual widget for one cell."""
         is_focused = index == self.focused_cell
+
+        # Run-state indicator (like Jupyter's [*] / [1] but simpler)
+        state_icon = {
+            "empty": "○",   # never run, no content
+            "ready": "○",   # has content, never run
+            "ok": "✓",      # ran successfully
+            "error": "✗",   # ran with error
+            "stale": "◐",   # edited since last run
+        }.get(cell._run_state, "○")
+
+        # Update "ready" for cells with content that haven't been run
+        if cell._run_state == "empty" and cell.source.strip():
+            state_icon = "○"
+
         focus_marker = "▶" if is_focused else " "
         type_badge = {"code": "⌨", "notation": "♪", "markdown": "¶"}.get(cell.cell_type, "?")
-
         collapse_icon = "▸" if cell.collapsed else "▾"
+
+        # Build a useful label
         label = cell.label or cell.cell_type.title()
-        instrument_tag = ""
+        extras = []
         if cell.cell_type == "notation" and cell.instrument:
-            instrument_tag = f" ({cell.instrument})"
-        header_text = f" {focus_marker} {collapse_icon} [{cell.id}] {type_badge} {label}{instrument_tag}"
+            extras.append(cell.instrument)
+        elif cell.collapsed and cell.cell_type == "code" and cell.source.strip():
+            # Show first meaningful line as preview when collapsed
+            for line in cell.source.splitlines():
+                line = line.strip()
+                if line and not line.startswith("#"):
+                    if len(line) > 40:
+                        line = line[:37] + "…"
+                    extras.append(line)
+                    break
+
+        extra_text = f"  {extras[0]}" if extras else ""
+        header_text = f" {focus_marker} {state_icon} {collapse_icon} [{index + 1}] {type_badge} {label}{extra_text}"
+
+        # Header styling based on focus and run state
+        if is_focused:
+            header_style = "bold"
+        elif cell._run_state == "error":
+            header_style = "fg:ansired"
+        elif cell._run_state == "stale":
+            header_style = "fg:ansiyellow"
+        elif cell._run_state == "ok":
+            header_style = "fg:ansigreen"
+        else:
+            header_style = ""
 
         header = Window(
             FormattedTextControl(header_text),
             height=1,
-            style="bold" if is_focused else "",
+            style=header_style,
         )
 
         if cell.collapsed:
             parts = [header]
         else:
             buf = self._get_buffer(cell)
+            if _COMPLETER and cell.cell_type in ("code", "notation"):
+                buf.completer = _COMPLETER
             editor_kwargs = {"buffer": buf}
             if _LEXER and cell.cell_type in ("code", "notation"):
                 editor_kwargs["lexer"] = _LEXER
-            if _COMPLETER and cell.cell_type in ("code", "notation"):
-                editor_kwargs["completer"] = _COMPLETER
             editor = Window(
                 BufferControl(**editor_kwargs),
-                height=max(3, cell.source.count("\n") + 2),
+                height=lambda b=buf: max(3, b.document.line_count + 1),
                 style="bg:#1a1a2e" if is_focused else "",
             )
             parts = [header, editor]
@@ -811,9 +960,11 @@ class StudioApp:
                 output_style = "fg:ansiyellow"
             else:
                 output_style = "fg:ansigreen"
+            # Indent all output lines for consistent alignment
+            indented = "\n".join(f"  {line}" for line in cell.output.splitlines())
             output_lines = cell.output.count("\n") + 1
             parts.append(Window(
-                FormattedTextControl(f"  {cell.output}"),
+                FormattedTextControl(indented),
                 height=min(output_lines, 5),
                 style=output_style,
             ))
@@ -828,11 +979,17 @@ class StudioApp:
         return HSplit(parts)
 
     def _build_toolbar(self):
+        # Contextual toolbar — show what matters based on state
+        parts = [" F5:Run"]
+        parts.append("F6:RunAll")
+        parts.append("F7:Add")
+        parts.append("F8:Del")
+        parts.append("Ctrl+↑↓:Nav")
+        parts.append("Ctrl+T:Type")
+        parts.append("F10:Save")
+        parts.append("Ctrl+Q:Quit")
         return Window(
-            FormattedTextControl(
-                " F1:Help  F5:Run  F6:RunAll  F7:Add  F8:Del  "
-                "F9:Export  F10:Save  Ctrl+P:Replay  Ctrl+Q:Quit"
-            ),
+            FormattedTextControl("  ".join(parts)),
             height=1,
             style="reverse",
         )
@@ -869,6 +1026,18 @@ class StudioApp:
 
     def _refresh_layout(self):
         self.app.layout = self._build_layout()
+        self._focus_current_cell()
+
+    def _focus_current_cell(self):
+        """Move prompt_toolkit focus to the buffer of the focused cell."""
+        if self.notebook.cells and 0 <= self.focused_cell < len(self.notebook.cells):
+            cell = self.notebook.cells[self.focused_cell]
+            if not cell.collapsed:
+                buf = self._get_buffer(cell)
+                try:
+                    self.app.layout.focus(buf)
+                except ValueError:
+                    pass
 
     # ── Application entry ────────────────────────────────────
 
@@ -879,6 +1048,7 @@ class StudioApp:
             full_screen=True,
             mouse_support=True,
         )
+        self._focus_current_cell()
 
     def run(self):
         self.app.run()
