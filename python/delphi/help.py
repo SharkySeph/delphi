@@ -361,6 +361,144 @@ STUDIO_HELP_PANEL = """\
 ║  PLAYBACK    SoundFont is default — drums → channel 9    ║
 ║              play("...", instrument="flute", channel=2)   ║
 ║                                                           ║
-║  Press F2 to close                                        ║
+║  Ctrl+Z:Undo  Ctrl+Y:Redo  Ctrl+L:Preview  F2:Close     ║
 ╚═══════════════════════════════════════════════════════════╝\
 """
+
+
+# ── Runnable Examples ─────────────────────────────────────────
+#
+# Each topic has a list of (title, notation_string) tuples.
+# The REPL `examples` command lists them; `examples <topic>` plays them.
+
+EXAMPLES = {
+    "notes": [
+        ("Scale ascending", "C4 D4 E4 F4 G4 A4 B4 C5"),
+        ("Chromatic climb", "C4 C#4 D4 D#4 E4 F4 F#4 G4"),
+        ("Notes with durations", "C4:h D4:q E4:q F4:8 G4:8 A4:8 B4:8 C5:w"),
+    ],
+    "chords": [
+        ("Major I-V-vi-IV", "| C | G | Am | F |"),
+        ("Jazz ii-V-I", "| Dm7 | G7 | Cmaj7 | Cmaj7 |"),
+        ("Slash chords", "| C/E | Am/C | F/A | G/B |"),
+    ],
+    "durations": [
+        ("Note values", "C4:w C4:h C4:q C4:8 C4:16"),
+        ("Dotted rhythms", "C4:q. D4:8 E4:q. F4:8 G4:h."),
+        ("Triplets", "C4:8t D4:8t E4:8t F4:8t G4:8t A4:8t"),
+    ],
+    "dynamics": [
+        ("Soft to loud", "C4:q!pp D4:q!p E4:q!mp F4:q!mf G4:q!f A4:q!ff B4:q!fff"),
+        ("Crescendo", "cresc(pp,ff,8) C4:8 D4:8 E4:8 F4:8 G4:8 A4:8 B4:8 C5:8"),
+        ("Accents", "C4:q!sfz E4:q!p G4:q!sfz C5:q!p"),
+    ],
+    "articulations": [
+        ("Staccato melody", "C4:8.stac D4:8.stac E4:8.stac F4:8.stac G4:q"),
+        ("Ghost notes", "C4:8.ghost D4:8.ghost E4:8 F4:8.ghost G4:8"),
+        ("Trill", "C4:h.tr D4:h.tr E4:w"),
+    ],
+    "drums": [
+        ("Basic beat", "{bd(3,8) sd(2,8) hh(5,8)}"),
+        ("Four on floor", "kick kick kick kick"),
+        ("Syncopated", "{bd(3,8) sd(2,8) hh(7,8) crash*1}"),
+    ],
+    "layers": [
+        ("Layered groove", "{bd(3,8) sd(2,8) hh(5,8)}"),
+        ("Two layers", "{kick snare kick snare hh hh hh hh}"),
+    ],
+    "bars": [
+        ("Pop progression", "| C | Am | F | G |"),
+        ("Blues", "| A7 | A7 | A7 | A7 | D7 | D7 | A7 | A7 | E7 | D7 | A7 | E7 |"),
+        ("Waltz", "| C | C | G7 | G7 | Am | Am | F G7 | C |"),
+    ],
+    "patterns": [
+        ("Subdivision", "[C4 E4 G4] [D4 F4 A4] [E4 G4 B4] C5:q"),
+        ("Repeat", "C4:8*4 E4:8*4 G4:8*4 C5:q"),
+        ("Random choice", "C4|E4|G4 C4|E4|G4 C4|E4|G4 C4|E4|G4"),
+        ("Tuplet", "(3 C4 E4 G4) (3 D4 F4 A4) C5:h"),
+    ],
+    "playback": [
+        ("Simple play", "C4 E4 G4 C5"),
+    ],
+    "songs": [
+        ("Two-track song",
+         'Song("Demo", tempo=120).track("Piano", "| C | Am | F | G |").track("Bass", "C2:h G2:h").play()'),
+    ],
+    "context": [
+        ("Change tempo", "C4:q D4:q E4:q F4:q"),
+    ],
+    "theory": [
+        ("Scale", 'scale("C", "major").play()'),
+        ("Chord", 'chord("Am7").play()'),
+    ],
+}
+
+# Map alias topics to canonical example keys
+for _alias, _target in [
+    ("note", "notes"), ("chord", "chords"), ("duration", "durations"),
+    ("dynamic", "dynamics"), ("articulation", "articulations"),
+    ("ornament", "articulations"), ("ornaments", "articulations"),
+    ("drum", "drums"), ("layer", "layers"), ("bar", "bars"),
+    ("rest", "notes"), ("repeat", "patterns"), ("structure", "patterns"),
+    ("pattern", "patterns"), ("play", "playback"), ("soundfont", "playback"),
+    ("sf", "playback"), ("song", "songs"), ("track", "songs"),
+    ("ctx", "context"), ("scale", "theory"),
+]:
+    if _alias not in EXAMPLES:
+        EXAMPLES[_alias] = EXAMPLES.get(_target, [])
+
+
+def get_examples_index() -> str:
+    """Return a formatted list of topics with examples."""
+    lines = ["\033[1mRunnable Examples\033[0m", ""]
+    lines.append("  Type \033[1mexamples <topic>\033[0m to see and play examples.")
+    lines.append("")
+    topics_with_examples = [t for t in TOPIC_INDEX if t in EXAMPLES and EXAMPLES[t]]
+    col_width = 18
+    cols = 3
+    for i in range(0, len(topics_with_examples), cols):
+        row = topics_with_examples[i:i + cols]
+        lines.append("    " + "".join(t.ljust(col_width) for t in row))
+    lines.append("")
+    return "\n".join(lines)
+
+
+def get_examples(topic: str) -> list[tuple[str, str]]:
+    """Return runnable examples for a topic. Each is (title, code_or_notation)."""
+    key = topic.strip().lower()
+    return EXAMPLES.get(key, [])
+
+
+# ── Error hint formatting ─────────────────────────────────────
+
+def format_error_hint(error: str, source: str = "") -> str:
+    """Given an error string from parse/play, return a helpful hint message.
+
+    Wraps the error with actionable suggestions based on common patterns.
+    """
+    hint_parts = [f"\033[31mError:\033[0m {error}"]
+
+    err_lower = error.lower()
+
+    if "no soundfont" in err_lower or "soundfont" in err_lower:
+        hint_parts.append("  💡 Run ensure_soundfont() to download the default SoundFont")
+    elif "nothing to play" in err_lower:
+        hint_parts.append("  💡 Check your notation — try: play(\"C4 E4 G4\")")
+    elif "not found" in err_lower or "unknown" in err_lower:
+        hint_parts.append("  💡 Type 'docs' to see available syntax")
+    elif "syntax" in err_lower:
+        hint_parts.append("  💡 Switch to a notation cell (Ctrl+T) for music notation")
+
+    # Run lint on the source for detailed feedback
+    if source:
+        from delphi.notation import lint
+        issues = lint(source)
+        if issues:
+            hint_parts.append("")
+            for issue in issues[:3]:
+                tok = issue["token"]
+                hint = issue["hint"]
+                if hint:
+                    hint_parts.append(f"  💡 '{tok}': {hint}")
+
+    return "\n".join(hint_parts)

@@ -10,7 +10,8 @@ from delphi.context import get_context
 from delphi.notation import parse, events_to_tuples
 
 
-def play(notation: str, stop_flag=None, channel=None, instrument=None) -> None:
+def play(notation: str, stop_flag=None, channel=None, instrument=None,
+         loop: bool = False) -> None:
     """
     Parse and play a notation string.
 
@@ -23,6 +24,7 @@ def play(notation: str, stop_flag=None, channel=None, instrument=None) -> None:
         stop_flag: Optional StopFlag for cancellation.
         channel: Override MIDI channel (0-15). Drums auto-route to 9.
         instrument: Override instrument name (e.g. "violin", "flute").
+        loop: If True, repeat playback until Ctrl+C or stop_flag.stop().
     """
     ctx = get_context()
     events = parse(notation, default_velocity=80)
@@ -35,27 +37,38 @@ def play(notation: str, stop_flag=None, channel=None, instrument=None) -> None:
         if key in GM_INSTRUMENTS:
             program = GM_INSTRUMENTS[key]
 
-    # Try SoundFont first — it handles all GM instruments + drums properly
-    from delphi.soundfont import get_soundfont_path
-    sf_path = get_soundfont_path()
-    if sf_path:
-        try:
-            from delphi._engine import play_sf
-            sf_tuples = _events_to_sf_tuples(events, program, channel)
-            if not sf_tuples:
+    while True:
+        # Try SoundFont first — it handles all GM instruments + drums properly
+        from delphi.soundfont import get_soundfont_path
+        sf_path = get_soundfont_path()
+        if sf_path:
+            try:
+                from delphi._engine import play_sf
+                sf_tuples = _events_to_sf_tuples(events, program, channel)
+                if not sf_tuples:
+                    print("(nothing to play)")
+                    return
+                play_sf(sf_path, sf_tuples, bpm=ctx.bpm, stop_flag=stop_flag)
+            except ImportError:
+                # Rust engine not built — use fallback
+                tuples = events_to_tuples(events)
+                if not tuples:
+                    print("(nothing to play)")
+                    return
+                play_notes(tuples, stop_flag=stop_flag)
+        else:
+            # Fallback: basic oscillator synth (no instrument variety, no drums)
+            tuples = events_to_tuples(events)
+            if not tuples:
                 print("(nothing to play)")
                 return
-            play_sf(sf_path, sf_tuples, bpm=ctx.bpm, stop_flag=stop_flag)
-            return
-        except ImportError:
-            pass  # Rust engine not built — fall through
+            play_notes(tuples, stop_flag=stop_flag)
 
-    # Fallback: basic oscillator synth (no instrument variety, no drums)
-    tuples = events_to_tuples(events)
-    if not tuples:
-        print("(nothing to play)")
-        return
-    play_notes(tuples, stop_flag=stop_flag)
+        if not loop:
+            break
+        # Check stop_flag between loop iterations
+        if stop_flag is not None and hasattr(stop_flag, 'is_stopped') and stop_flag.is_stopped():
+            break
 
 
 def _events_to_sf_tuples(events, program: int, channel=None):

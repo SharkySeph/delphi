@@ -21,6 +21,7 @@ from delphi.context import (
     reset_context,
 )
 from delphi.notation import parse as parse_notation
+from delphi.notation import lint, preview, format_preview, transpose
 from delphi.theory import chord, scale, note
 from delphi.playback import play, play_notes
 from delphi.export import export
@@ -50,7 +51,7 @@ def run_studio(target=None):
     from delphi.studio import run_studio as _run
     return _run(target)
 
-__version__ = "0.4.0"
+__version__ = "0.5.0"
 
 __all__ = [
     "tempo",
@@ -62,6 +63,10 @@ __all__ = [
     "get_context",
     "reset_context",
     "parse_notation",
+    "lint",
+    "preview",
+    "format_preview",
+    "transpose",
     "chord",
     "scale",
     "note",

@@ -1205,3 +1205,396 @@ def events_to_tuples(events: list[Event]) -> list[tuple[int, int, int, int]]:
         if evt.kind != "rest":
             tuples.extend(evt.to_tuples())
     return tuples
+
+
+# ── Lint — validate notation and report issues ────────────────
+
+def lint(notation: str) -> list[dict]:
+    """Check notation for potential issues without playing.
+
+    Returns a list of issue dicts:  {token, hint, position}
+    An empty list means the notation is clean.
+    """
+    if not notation or not notation.strip():
+        return []
+
+    issues: list[dict] = []
+    tokens = _tokenize(notation.strip())
+
+    for i, token in enumerate(tokens):
+        # Skip known structural tokens
+        if token in (".", "~", "r", "rest", "_", "breath", "caesura", "DC", "DS",
+                      "segno", "coda", "fine"):
+            continue
+
+        # Skip bracket/brace groups — recurse into them
+        if token.startswith("{") and token.endswith("}"):
+            inner_issues = lint(token[1:-1])
+            issues.extend(inner_issues)
+            continue
+        if token.startswith("[") and token.endswith("]"):
+            inner_issues = lint(token[1:-1])
+            issues.extend(inner_issues)
+            continue
+        if token.startswith("<") and token.endswith(">"):
+            inner_issues = lint(token[1:-1])
+            issues.extend(inner_issues)
+            continue
+
+        # Skip tuplet starts
+        if token.startswith("(") and len(token) > 1 and token[1:].strip(")").isdigit():
+            continue
+
+        # Skip Euclidean rhythms
+        if EUCLIDEAN_RE.match(token):
+            continue
+
+        # Skip crescendo/decrescendo
+        if CRESC_RE.match(token):
+            continue
+
+        # Skip random choice (contains |)
+        if "|" in token:
+            # Check each choice
+            for choice in token.split("|"):
+                choice = choice.strip()
+                if choice and not _parse_token(choice, 0, TICKS_PER_QUARTER, 80):
+                    issues.append({
+                        "token": choice,
+                        "hint": _hint_for_token(choice),
+                        "position": i,
+                    })
+            continue
+
+        # Skip polyphony (contains ,) — but not cresc
+        if "," in token and not token.startswith(("(", "<")) and not CRESC_RE.match(token):
+            for part in token.split(","):
+                part = part.strip()
+                if part and not _parse_token(part, 0, TICKS_PER_QUARTER, 80):
+                    issues.append({
+                        "token": part,
+                        "hint": _hint_for_token(part),
+                        "position": i,
+                    })
+            continue
+
+        # Skip repeats: token*N
+        if "*" in token:
+            base = token.rsplit("*", 1)[0]
+            if not _parse_token(base, 0, TICKS_PER_QUARTER, 80):
+                issues.append({
+                    "token": base,
+                    "hint": _hint_for_token(base),
+                    "position": i,
+                })
+            continue
+
+        # Skip ties: A~B
+        if "~" in token and not token.startswith("~"):
+            for part in token.split("~"):
+                if part and not _parse_token(part, 0, TICKS_PER_QUARTER, 80):
+                    issues.append({
+                        "token": part,
+                        "hint": _hint_for_token(part),
+                        "position": i,
+                    })
+            continue
+
+        # Skip elongation: token@N
+        if "@" in token:
+            base = token.split("@")[0]
+            if not _parse_token(base, 0, TICKS_PER_QUARTER, 80):
+                issues.append({
+                    "token": base,
+                    "hint": _hint_for_token(base),
+                    "position": i,
+                })
+            continue
+
+        # Skip random removal: token?
+        if "?" in token and token != "?":
+            base = token.split("?")[0]
+            if not _parse_token(base, 0, TICKS_PER_QUARTER, 80):
+                issues.append({
+                    "token": base,
+                    "hint": _hint_for_token(base),
+                    "position": i,
+                })
+            continue
+
+        # Regular token — check if parser recognizes it
+        evt = _parse_token(token, 0, TICKS_PER_QUARTER, 80)
+        if evt is None:
+            issues.append({
+                "token": token,
+                "hint": _hint_for_token(token),
+                "position": i,
+            })
+
+    return issues
+
+
+def _hint_for_token(token: str) -> str:
+    """Generate a helpful hint for an unrecognized token."""
+    t = token.strip()
+    if not t:
+        return ""
+
+    # Looks like a note but missing octave: C, D#, Bb
+    if re.match(r'^[A-Ga-g][#b]{0,2}$', t):
+        return f"Missing octave — try {t.upper()}4"
+
+    # Looks like a note with bad duration: C4:x
+    m = re.match(r'^([A-Ga-g][#b]{0,2}\d):(\S+)$', t)
+    if m:
+        note_part, dur = m.group(1), m.group(2)
+        if dur not in DURATION_MAP:
+            return f"Unknown duration ':{dur}' — try :w :h :q :8 :16 :32"
+
+    # Looks like note with bad dynamic: C4!xyz
+    m = re.match(r'^([A-Ga-g][#b]{0,2}\d)!(\S+)$', t)
+    if m:
+        dyn = m.group(2)
+        if dyn.lower() not in DYNAMICS_MAP:
+            return f"Unknown dynamic '!{dyn}' — try !p !mf !f !ff !sfz"
+
+    # Close to a drum name?
+    lower = t.lower()
+    for drum in DRUM_MAP:
+        if lower.startswith(drum[:2]) or drum.startswith(lower[:2]):
+            if lower != drum:
+                return f"Did you mean '{drum}'?"
+
+    # Looks like a chord but unrecognized quality
+    m = re.match(r'^[A-Ga-g][#b]{0,2}(.+)$', t)
+    if m:
+        quality = m.group(1)
+        if quality and not quality[0].isdigit():
+            return f"Unknown chord quality '{quality}' — try m, 7, maj7, dim, aug, sus4"
+
+    return "Unrecognized token — see 'docs notes' or 'docs chords'"
+
+
+# ── Preview — parse and summarize without playing ─────────────
+
+def preview(notation: str) -> dict:
+    """Parse notation and return summary stats without playing.
+
+    Returns a dict with: notes, chords, drums, rests, bars, duration_beats,
+    duration_seconds, pitch_range, issues.
+    """
+    from delphi.context import get_context
+    ctx = get_context()
+
+    events = parse(notation, default_velocity=80)
+    issues = lint(notation)
+
+    notes = [e for e in events if e.kind == "note"]
+    chords = [e for e in events if e.kind == "chord"]
+    drums = [e for e in events if e.kind == "drum"]
+    rests = [e for e in events if e.kind == "rest"]
+
+    ticks_per_bar = TICKS_PER_QUARTER * ctx.time_sig_num * (4 // ctx.time_sig_den)
+    total_ticks = _events_end_tick(events) if events else 0
+    bars = total_ticks / ticks_per_bar if ticks_per_bar else 0
+    duration_beats = total_ticks / TICKS_PER_QUARTER
+    duration_seconds = (total_ticks / TICKS_PER_QUARTER) * (60.0 / ctx.bpm)
+
+    # Pitch range
+    all_midi = []
+    for e in events:
+        if e.kind in ("note", "chord"):
+            all_midi.extend(e.midi_notes)
+
+    pitch_range = ""
+    if all_midi:
+        low = min(all_midi)
+        high = max(all_midi)
+        pitch_range = f"{_midi_to_name(low)} — {_midi_to_name(high)}"
+
+    return {
+        "notes": len(notes),
+        "chords": len(chords),
+        "drums": len(drums),
+        "rests": len(rests),
+        "bars": round(bars, 1),
+        "duration_beats": round(duration_beats, 1),
+        "duration_seconds": round(duration_seconds, 1),
+        "pitch_range": pitch_range,
+        "issues": issues,
+    }
+
+
+def format_preview(notation: str) -> str:
+    """Return a human-readable preview summary string."""
+    p = preview(notation)
+    parts = []
+
+    counts = []
+    if p["notes"]:
+        counts.append(f"{p['notes']} notes")
+    if p["chords"]:
+        counts.append(f"{p['chords']} chords")
+    if p["drums"]:
+        counts.append(f"{p['drums']} drum hits")
+    if p["rests"]:
+        counts.append(f"{p['rests']} rests")
+    parts.append(", ".join(counts) if counts else "empty")
+
+    parts.append(f"{p['bars']} bars  ({p['duration_seconds']}s at current tempo)")
+
+    if p["pitch_range"]:
+        parts.append(f"Range: {p['pitch_range']}")
+
+    if p["issues"]:
+        parts.append("")
+        parts.append(f"⚠ {len(p['issues'])} issue{'s' if len(p['issues']) > 1 else ''}:")
+        for issue in p["issues"][:5]:
+            hint = f" — {issue['hint']}" if issue["hint"] else ""
+            parts.append(f"  · '{issue['token']}'{hint}")
+
+    return "\n".join(parts)
+
+
+# ── Transpose — shift notation by semitones ───────────────────
+
+_NOTE_NAMES_SHARP = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
+_NOTE_NAMES_FLAT = ["C", "Db", "D", "Eb", "E", "F", "Gb", "G", "Ab", "A", "Bb", "B"]
+
+
+def _midi_to_name(midi: int, prefer_flat: bool = False) -> str:
+    """Convert MIDI number to note name like 'C4' or 'Bb3'."""
+    names = _NOTE_NAMES_FLAT if prefer_flat else _NOTE_NAMES_SHARP
+    octave = (midi // 12) - 1
+    note = names[midi % 12]
+    return f"{note}{octave}"
+
+
+def _transpose_token(token: str, semitones: int, prefer_flat: bool) -> str:
+    """Transpose a single note/chord token by N semitones."""
+    # Note: C4:q!f.stac → parse, shift, rebuild
+    m = NOTE_RE.match(token)
+    if m:
+        pitch = m.group(1).upper()
+        acc = m.group(2) or ""
+        octave = int(m.group(3))
+        suffix = token[m.end(3):]  # everything after octave: :q!f.stac
+        midi = _note_to_midi(pitch, acc, octave)
+        new_midi = midi + semitones
+        new_name = _midi_to_name(new_midi, prefer_flat)
+        return new_name + suffix
+
+    # Chord: Am7:q!f → transpose root
+    cm = CHORD_RE.match(token.split("!")[0].split(":")[0])
+    if cm:
+        root = cm.group(1).upper()
+        acc = cm.group(2) or ""
+        quality = cm.group(3) or ""
+        octave_str = cm.group(4)
+        octave = int(octave_str) if octave_str else 4
+        # Get suffix (everything after the chord match)
+        matched_len = cm.end()
+        rest = token[matched_len:]
+
+        midi = _note_to_midi(root, acc, octave)
+        new_midi = midi + semitones
+        new_name = _midi_to_name(new_midi, prefer_flat)
+        # Split new_name into note+octave
+        if new_name[-1].isdigit():
+            # Handle negative octaves
+            if "-" in new_name:
+                name_part = new_name[:new_name.index("-")]
+                oct_part = new_name[new_name.index("-"):]
+            else:
+                idx = len(new_name) - 1
+                while idx > 0 and (new_name[idx].isdigit() or new_name[idx] == "-"):
+                    idx -= 1
+                name_part = new_name[:idx + 1]
+                oct_part = new_name[idx + 1:]
+        else:
+            name_part = new_name
+            oct_part = str(octave)
+
+        if octave_str:
+            return name_part + quality + oct_part + rest
+        else:
+            return name_part + quality + rest
+
+    return token  # unchanged
+
+
+def transpose(notation: str, semitones: int, prefer_flat: bool = False) -> str:
+    """Transpose a notation string by N semitones.
+
+    Args:
+        notation: Delphi notation string.
+        semitones: Number of semitones to shift (positive=up, negative=down).
+        prefer_flat: Use flats instead of sharps for accidentals.
+
+    Returns:
+        New notation string with all notes/chords transposed.
+    """
+    if semitones == 0:
+        return notation
+
+    # Handle bar notation
+    if "|" in notation and not _looks_like_random_choice(notation):
+        bars = notation.split("|")
+        new_bars = []
+        for bar in bars:
+            tokens = bar.strip().split()
+            new_tokens = [_transpose_token(t, semitones, prefer_flat) for t in tokens]
+            new_bars.append(" ".join(new_tokens))
+        return " | ".join(b for b in new_bars)
+
+    # Handle sequence notation
+    tokens = _tokenize(notation)
+    result_parts = []
+    for token in tokens:
+        # Layer group
+        if token.startswith("{") and token.endswith("}"):
+            inner = token[1:-1].strip()
+            transposed_inner = transpose(inner, semitones, prefer_flat)
+            result_parts.append("{" + transposed_inner + "}")
+        # Subdivision
+        elif token.startswith("[") and token.endswith("]"):
+            inner = token[1:-1].strip()
+            transposed_inner = transpose(inner, semitones, prefer_flat)
+            result_parts.append("[" + transposed_inner + "]")
+        # Slow sequence
+        elif token.startswith("<") and token.endswith(">"):
+            inner = token[1:-1].strip()
+            transposed_inner = transpose(inner, semitones, prefer_flat)
+            result_parts.append("<" + transposed_inner + ">")
+        # Repeat
+        elif "*" in token:
+            base, count = token.rsplit("*", 1)
+            result_parts.append(_transpose_token(base, semitones, prefer_flat) + "*" + count)
+        # Tie
+        elif "~" in token and not token.startswith("~"):
+            parts = token.split("~")
+            result_parts.append("~".join(_transpose_token(p, semitones, prefer_flat) for p in parts))
+        # Elongation
+        elif "@" in token:
+            base, weight = token.split("@", 1)
+            result_parts.append(_transpose_token(base, semitones, prefer_flat) + "@" + weight)
+        # Random removal
+        elif "?" in token and token != "?":
+            base, prob = token.split("?", 1)
+            result_parts.append(_transpose_token(base, semitones, prefer_flat) + "?" + prob)
+        # Random choice
+        elif "|" in token:
+            choices = token.split("|")
+            result_parts.append("|".join(_transpose_token(c, semitones, prefer_flat) for c in choices))
+        # Polyphony
+        elif "," in token and not CRESC_RE.match(token):
+            parts = token.split(",")
+            result_parts.append(",".join(_transpose_token(p, semitones, prefer_flat) for p in parts))
+        # Euclidean (don't transpose drum names)
+        elif EUCLIDEAN_RE.match(token):
+            result_parts.append(token)
+        # Regular token
+        else:
+            result_parts.append(_transpose_token(token, semitones, prefer_flat))
+
+    return " ".join(result_parts)

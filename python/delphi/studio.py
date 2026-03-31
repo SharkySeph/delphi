@@ -40,7 +40,12 @@ from prompt_toolkit.widgets import Frame
 import delphi
 from delphi.context import get_context
 from delphi.song import Song, Track, GM_INSTRUMENTS
-from delphi.help import STUDIO_HELP_PANEL
+from delphi.help import STUDIO_HELP_PANEL, format_error_hint
+from delphi.notation import (
+    lint as lint_notation,
+    format_preview,
+    transpose as transpose_notation,
+)
 
 # Reuse the REPL's notation detector, syntax highlighter, and completer
 try:
@@ -239,6 +244,10 @@ class Notebook:
             "ensure_soundfont": delphi.ensure_soundfont,
             "soundfont_info": delphi.soundfont_info,
             "set_soundfont": delphi.set_soundfont,
+            "transpose": transpose_notation,
+            "preview": lambda n: format_preview(n),
+            "lint": lint_notation,
+            "loop": lambda n, **kw: _play(n, loop=True, **kw),
             "cells": self.cells,
         }
         if self.song:
@@ -300,11 +309,23 @@ class Notebook:
                 channel=cell.channel,
                 instrument=cell.instrument,
             )
+
+            # Show lint warnings alongside success
+            issues = lint_notation(clean_source)
+            if issues:
+                warn_count = len(issues)
+                info += f"  ⚠ {warn_count} issue{'s' if warn_count > 1 else ''}"
+                for issue in issues[:2]:
+                    hint = f" — {issue['hint']}" if issue.get('hint') else ""
+                    info += f"\n  · '{issue['token']}'{hint}"
+
             return info
         except KeyboardInterrupt:
             return "⏹ Stopped"
         except Exception as e:
-            return f"✗ {e}"
+            # Provide contextual error hints
+            hint = format_error_hint(str(e), clean_source)
+            return f"✗ {hint}" if hint != str(e) else f"✗ {e}"
 
     def _run_code_cell(self, cell: Cell, namespace: dict) -> str:
         """Execute a code cell with REPL-like notation auto-detection.
@@ -799,14 +820,45 @@ class StudioApp:
         @kb.add("f1")
         def show_help(event):
             self.message = (
-                "F5:Run cell  F6:Run all  F7:Add  F8:Delete  F9:Export  F10/Ctrl+S:Save │ "
-                "Ctrl+↑↓:Navigate  Ctrl+Shift+↑↓:Reorder  Ctrl+T:Type  Ctrl+E:Fold  Ctrl+P:Replay  Ctrl+Q:Quit"
+                "F5:Run  F6:RunAll  F7:Add  F8:Del  F9:Export  F10/Ctrl+S:Save │ "
+                "Ctrl+↑↓:Nav  Ctrl+Shift+↑↓:Reorder  Ctrl+T:Type  Ctrl+L:Preview  "
+                "Ctrl+Z:Undo  Ctrl+Y:Redo  Ctrl+E:Fold  Ctrl+P:Replay  Ctrl+Q:Quit"
             )
             self._refresh_layout()
 
         @kb.add("f2")
         def toggle_docs(event):
             self._show_help_panel = not self._show_help_panel
+            self._refresh_layout()
+
+        @kb.add("c-l")
+        def preview_cell(event):
+            """Ctrl+L: preview the focused cell (stats without playing)."""
+            if not self.notebook.cells:
+                return
+            cell = self.notebook.cells[self.focused_cell]
+            source = cell.source.strip()
+            if not source:
+                self.message = "Empty cell — nothing to preview"
+                self._refresh_layout()
+                return
+            if cell.cell_type == "notation":
+                _, clean_source = _parse_pragmas(source)
+                if clean_source:
+                    cell.output = format_preview(clean_source)
+                    issues = lint_notation(clean_source)
+                    if issues:
+                        cell._run_state = "stale"
+                    else:
+                        cell._run_state = "ready"
+                    self.message = f"👁 Preview of cell [{self.focused_cell + 1}]"
+                else:
+                    self.message = "No notation after pragmas"
+            elif cell.cell_type == "code":
+                # For code cells, try to detect notation strings
+                self.message = "Preview only works for notation cells"
+            else:
+                self.message = "Preview only works for notation cells"
             self._refresh_layout()
 
         return kb
@@ -1029,6 +1081,7 @@ class StudioApp:
         parts.append("F7:Add")
         parts.append("F8:Del")
         parts.append("F2:Docs")
+        parts.append("Ctrl+L:Preview")
         parts.append("Ctrl+↑↓:Nav")
         parts.append("Ctrl+T:Type")
         parts.append("F10:Save")

@@ -100,6 +100,9 @@ Freeform text for notes, section headers, or lyrics. These don't execute — the
 | **F8** | Delete cell (press twice to confirm) |
 | **Ctrl+T** | Cycle cell type: code → notation → markdown |
 | **Ctrl+E** | Collapse / expand cell |
+| **Ctrl+L** | Preview focused cell (stats without playing) |
+| **Ctrl+Z** | Undo edit |
+| **Ctrl+Y** | Redo edit |
 | **Tab** | Auto-complete |
 
 ### File Operations
@@ -301,6 +304,12 @@ All functions from the REPL are available in code cells:
 - `ensure_soundfont()` — download default SoundFont if needed
 - `soundfont_info()` — show loaded SoundFont details
 - `set_soundfont(path)` — use a custom SoundFont
+
+### Songwriting Utilities
+- `preview(notation)` — dry-run: note count, bars, duration, pitch range, and lint issues
+- `lint(notation)` — check notation for unrecognized tokens with hints
+- `transpose(notation, semitones)` — return transposed notation string
+- `loop(notation)` — play in a loop until Ctrl+C
 
 ---
 

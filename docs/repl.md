@@ -88,6 +88,7 @@ tr  mord  lmord  turn  grace  appoggiatura  trem  gliss  arp  roll
 | Key | Action |
 |-----|--------|
 | `Tab` | Auto-complete |
+| `→` | Accept ghost-text suggestion |
 | `Ctrl+P` | Re-play the last notation |
 | `Ctrl+C` | Stop playback / cancel input |
 | `Ctrl+D` | Exit the REPL |
@@ -100,9 +101,66 @@ tr  mord  lmord  turn  grace  appoggiatura  trem  gliss  arp  roll
 | `help` | Show the full help text |
 | `docs` | List all quick-reference topics |
 | `docs <topic>` | Show docs for a topic (e.g. `docs drums`, `docs layers`) |
-| `quit` / `exit` | Exit the REPL |
+| `examples` | List topics with runnable examples |
+| `examples <topic>` | Play examples for a topic (e.g. `examples chords`) |
 | `instruments` | List all GM instrument names |
 | `sf` | Show SoundFont configuration |
+| `songs` | Show defined Song objects |
+| `tracks` | Show tracks from all songs |
+| `quit` / `exit` | Exit the REPL |
+
+## Utility Functions
+
+These functions are available in the REPL for working with notation without playing:
+
+### Preview
+
+```python
+preview("C4 E4 G4 C5")
+```
+
+Shows a dry-run summary: note count, bars, duration in seconds, pitch range, and any issues — without playing audio.
+
+### Lint
+
+```python
+lint("C4 E4 xyz G4")
+```
+
+Checks notation for unrecognized tokens and provides contextual hints:
+- Missing octave numbers (`C` → try `C4`)
+- Unknown durations (`:x` → try `:q`, `:8`, `:h`)
+- Misspelled drum names
+- Unknown chord qualities
+
+### Transpose
+
+```python
+transpose("C4 E4 G4", 2)              # Up 2 semitones → D4 F#4 A4
+transpose("| Am | F | C | G |", -3)   # Down 3 → F#m D A E
+transpose("C4 E4 G4", 5, prefer_flat=True)  # Use flats
+```
+
+Returns a new notation string with all notes and chords shifted by the given number of semitones.
+
+### Loop
+
+```python
+loop("C4 E4 G4 C5")
+loop("| Am | F | C | G |", instrument="piano")
+```
+
+Plays notation in an infinite loop until `Ctrl+C`. Accepts the same keyword arguments as `play()`.
+
+## Inline Error Hints
+
+When a parse or playback error occurs, the REPL provides contextual suggestions:
+
+```
+𝄞 Cx4 E4 G4
+Error: ...
+  💡 'Cx4': Unknown chord quality 'x4' — try m, 7, maj7, dim, aug, sus4
+```
 
 ## Syntax Suggestions
 

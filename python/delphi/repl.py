@@ -17,7 +17,16 @@ import traceback
 
 import delphi
 from delphi.song import GM_INSTRUMENTS
-from delphi.help import get_docs, get_docs_index, get_suggestion
+from delphi.help import (
+    get_docs, get_docs_index, get_suggestion,
+    get_examples_index, get_examples, format_error_hint,
+)
+from delphi.notation import (
+    lint as lint_notation,
+    preview as preview_notation,
+    format_preview,
+    transpose as transpose_notation,
+)
 
 
 # ── Syntax Highlighting via Pygments ─────────────────────────
@@ -128,9 +137,11 @@ _FUNCTIONS = [
     'include("',
     'ensure_soundfont()', 'soundfont_info()',
     'get_context()', 'reset_context()',
+    'transpose("', 'preview("', 'lint("', 'loop("',
 ]
 
-_COMMANDS = ["help", "quit", "exit", "songs", "tracks", "instruments", "sf", "docs"]
+_COMMANDS = ["help", "quit", "exit", "songs", "tracks", "instruments", "sf",
+             "docs", "examples", "preview", "lint"]
 
 _INSTRUMENTS = sorted(GM_INSTRUMENTS.keys())
 
@@ -149,6 +160,14 @@ class DelphiCompleter(Completer):
 
         # After "docs " → complete topic names
         if text.lstrip().startswith("docs "):
+            from delphi.help import TOPIC_INDEX
+            for topic in TOPIC_INDEX:
+                if topic.startswith(wl):
+                    yield Completion(topic, start_position=-len(word))
+            return
+
+        # After "examples " → complete topic names
+        if text.lstrip().startswith("examples "):
             from delphi.help import TOPIC_INDEX
             for topic in TOPIC_INDEX:
                 if topic.startswith(wl):
@@ -298,6 +317,8 @@ Type expressions to play music. Try: play("C4 E4 G4 C5")
   chord("Am7").play()         Play a chord
   tempo(90)                   Change tempo
   docs                        Quick-reference topics
+  examples drums              Hear runnable examples
+  preview("C4 E4 G4")        Preview without playing
   help                        Show all commands
   quit                        Exit
 """.format(version=delphi.__version__)
@@ -442,6 +463,12 @@ HELP_TEXT = """
   sf                         Show SoundFont status
   docs                       List all quick-reference topics
   docs <topic>               Show docs for a topic (e.g. docs drums)
+  examples                   List topics with runnable examples
+  examples <topic>           Play examples for a topic
+  preview("C4 E4 G4")       Show stats without playing (note count, bars, etc.)
+  lint("C4 E4 G4")          Check notation for issues
+  transpose("C4 E4 G4", 2)  Transpose notation by semitones
+  loop("C4 E4 G4")          Play in a loop until Ctrl+C
   songs                      Show defined Song objects
   help                       This help text
   quit / exit                Leave the REPL
@@ -452,6 +479,7 @@ HELP_TEXT = """
   Ctrl+D    Exit
   ↑ / ↓     History navigation
   Tab       Auto-complete
+  →         Accept ghost-text suggestion
 """
 
 
@@ -512,6 +540,10 @@ def run_repl(project_dir: str | None = None):
         "soundfont_info": delphi.soundfont_info,
         "GM_INSTRUMENTS": delphi.GM_INSTRUMENTS,
         "help": lambda: print(HELP_TEXT),
+        "preview": lambda n: print(format_preview(n)),
+        "lint": lambda n: print(_format_lint(lint_notation(n))),
+        "transpose": transpose_notation,
+        "loop": lambda n, **kw: delphi.play(n, loop=True, **kw),
         "_songs": _songs,
     }
 
@@ -575,6 +607,33 @@ def run_repl(project_dir: str | None = None):
             print(get_docs(topic))
             continue
 
+        if text == "examples":
+            print(get_examples_index())
+            continue
+
+        if text.startswith("examples "):
+            topic = text[9:].strip()
+            exs = get_examples(topic)
+            if not exs:
+                print(f"  No examples for '{topic}'. Type 'examples' to see topics.")
+                continue
+            print(f"\n\033[1mExamples — {topic}\033[0m\n")
+            for idx, (title, code) in enumerate(exs, 1):
+                print(f"  \033[1;33m{idx}. {title}\033[0m")
+                print(f"     {code}")
+                try:
+                    if code.startswith(("Song(", "scale(", "chord(", "note(")):
+                        eval(code, {"__builtins__": __builtins__}, namespace)
+                    else:
+                        delphi.play(code)
+                except KeyboardInterrupt:
+                    print("  ⏹ Stopped")
+                    break
+                except Exception as e:
+                    print(f"     (couldn't play: {e})")
+                print()
+            continue
+
         if text == "songs":
             _show_songs(namespace)
             continue
@@ -590,7 +649,7 @@ def run_repl(project_dir: str | None = None):
             except KeyboardInterrupt:
                 print("\n\033[33mStopped.\033[0m")
             except Exception as e:
-                print(f"\033[31mError:\033[0m {e}")
+                print(format_error_hint(str(e), text))
             continue
 
         # Execute as Python with our namespace
@@ -607,11 +666,22 @@ def run_repl(project_dir: str | None = None):
             except KeyboardInterrupt:
                 print("\n\033[33mStopped.\033[0m")
             except Exception as e:
-                print(f"\033[31mError:\033[0m {e}")
+                print(format_error_hint(str(e), text))
         except KeyboardInterrupt:
             print("\n\033[33mStopped.\033[0m")
         except Exception as e:
-            print(f"\033[31mError:\033[0m {e}")
+            print(format_error_hint(str(e), text))
+
+
+def _format_lint(issues: list[dict]) -> str:
+    """Format lint issues for display in the REPL."""
+    if not issues:
+        return "\033[32m✓ No issues found\033[0m"
+    lines = [f"\033[33m⚠ {len(issues)} issue{'s' if len(issues) > 1 else ''}\033[0m"]
+    for issue in issues:
+        hint = f" — {issue['hint']}" if issue.get('hint') else ""
+        lines.append(f"  · '\033[1m{issue['token']}\033[0m'{hint}")
+    return "\n".join(lines)
 
 
 # ── Project Loading ───────────────────────────────────────────
