@@ -366,6 +366,30 @@ bd(3,8,2)       Same pattern, rotated by 2 steps
 
 The syntax is `instrument(beats, steps)` or `instrument(beats, steps, offset)`.
 
+## Layers
+
+Curly braces `{...}` play multiple patterns simultaneously, starting at the same beat. This is essential for building realistic drum grooves where kick, snare, and hi-hat overlap.
+
+```
+{bd(3,8) sd(2,8) hh(5,8)}      All three patterns play at the same time
+{kick*8 snare*4}                Layered straight patterns
+```
+
+Without braces, patterns are sequential — `bd(3,8) sd(2,8)` plays the kick pattern first, *then* the snare. With braces, they overlap like a real drummer.
+
+### Multi-bar layers
+
+Combine layers with repeats for longer sections:
+
+```
+{bd(3,8) sd(2,8) hh(5,8)}
+{bd(3,8) sd(2,8) hh(5,8)}
+{bd(3,8) sd(2,8) hh(5,8) crash*1}
+{bd(3,8) sd(2,8) hh(5,8)}
+```
+
+Each `{...}` block advances by the length of its longest inner pattern, so four blocks = four bars of layered drums.
+
 ## Polyphony
 
 Comma-separated notes play simultaneously (vertically stacked).
@@ -467,7 +491,7 @@ C4 D4 fine E4 DC       Da Capo al Fine — repeat from start, stop at fine
 
 ## Drums
 
-Drum hits use named tokens instead of pitched notes. Drums are automatically assigned to MIDI channel 10.
+Drum hits use named tokens instead of pitched notes. Drums are automatically routed to MIDI channel 9 (channel 10 in 1-indexed MIDI convention).
 
 ```
 kick snare hihat hihat       Basic rock beat

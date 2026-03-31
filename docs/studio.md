@@ -76,6 +76,13 @@ Freeform text for notes, section headers, or lyrics. These don't execute — the
 | **Ctrl+P** | Replay last successfully executed cell |
 | **Ctrl+C** | Stop playback |
 
+### Quick Reference
+
+| Key | Action |
+|-----|--------|
+| **F1** | Show all keybindings in status bar |
+| **F2** | Toggle quick-reference docs panel |
+
 ### Navigation
 
 | Key | Action |
@@ -241,6 +248,21 @@ Studio shares the REPL's auto-complete system. Press **Tab** to complete:
 - Articulations (`.stac`, `.acc`, `.ferm`)
 - Ornaments (`.tr`, `.mord`, `.grace`)
 
+## Syntax Suggestions
+
+As you type, ghost-text hints appear showing what you could type next:
+
+- After a note → duration suggestion (`:q`)
+- After a drum name → Euclidean syntax (`(3,8)`)
+- After a bar pipe `|` → chord suggestion
+- After `{` → drum layer pattern
+
+Press **→** to accept, or keep typing to ignore.
+
+## Quick Reference Panel
+
+Press **F2** to toggle a docked reference panel showing all notation syntax at a glance — notes, chords, durations, dynamics, articulations, drums, layers, and pragmas. Press **F2** again to close it.
+
 ---
 
 ## Available Functions
@@ -249,8 +271,12 @@ All functions from the REPL are available in code cells:
 
 ### Playback & Export
 - `play(notation)` — parse and play notation
+- `play(notation, channel=2)` — override MIDI channel
+- `play(notation, instrument="flute")` — override instrument
 - `play_notes(events)` — play raw note events
 - `export(notation, path)` — export to MIDI file
+
+> **SoundFont-first:** All playback uses SoundFont by default. Drums are automatically routed to MIDI channel 9. Falls back to oscillator synth only when no SoundFont is available.
 
 ### Context
 - `tempo(bpm)` — set tempo

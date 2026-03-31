@@ -40,6 +40,7 @@ from prompt_toolkit.widgets import Frame
 import delphi
 from delphi.context import get_context
 from delphi.song import Song, Track, GM_INSTRUMENTS
+from delphi.help import STUDIO_HELP_PANEL
 
 # Reuse the REPL's notation detector, syntax highlighter, and completer
 try:
@@ -58,6 +59,12 @@ try:
     _COMPLETER = DelphiCompleter()
 except Exception:
     _COMPLETER = None
+
+try:
+    from delphi.repl import DelphiAutoSuggest
+    _AUTO_SUGGEST = DelphiAutoSuggest()
+except Exception:
+    _AUTO_SUGGEST = None
 
 
 # ── Cell Model ────────────────────────────────────────────────
@@ -452,7 +459,7 @@ class Notebook:
         # Play the assembled song
         if self.song.tracks:
             try:
-                self.song.play()
+                self.song.play(stop_flag=self._stop_flag)
                 outputs.append(f"▶ Song: {track_count} tracks")
             except KeyboardInterrupt:
                 outputs.append("⏹ Stopped")
@@ -599,18 +606,22 @@ class StudioApp:
         notebook._stop_flag = self._stop_flag
 
         self.namespace = notebook._build_namespace()
+        self._show_help_panel: bool = False   # F2 toggles reference panel
         self._build_app()
 
     # ── Buffer management ─────────────────────────────────────
 
     def _get_buffer(self, cell: Cell) -> Buffer:
         if cell.id not in self._buffers:
-            self._buffers[cell.id] = Buffer(
+            buf_kwargs = dict(
                 document=Document(cell.source, 0),
                 multiline=True,
                 name=f"cell-{cell.id}",
                 on_text_changed=lambda buf: self._sync_source(cell, buf),
             )
+            if _AUTO_SUGGEST and cell.cell_type in ("code", "notation"):
+                buf_kwargs["auto_suggest"] = _AUTO_SUGGEST
+            self._buffers[cell.id] = Buffer(**buf_kwargs)
         return self._buffers[cell.id]
 
     def _sync_source(self, cell: Cell, buf: Buffer) -> None:
@@ -791,6 +802,11 @@ class StudioApp:
                 "F5:Run cell  F6:Run all  F7:Add  F8:Delete  F9:Export  F10/Ctrl+S:Save │ "
                 "Ctrl+↑↓:Navigate  Ctrl+Shift+↑↓:Reorder  Ctrl+T:Type  Ctrl+E:Fold  Ctrl+P:Replay  Ctrl+Q:Quit"
             )
+            self._refresh_layout()
+
+        @kb.add("f2")
+        def toggle_docs(event):
+            self._show_help_panel = not self._show_help_panel
             self._refresh_layout()
 
         return kb
@@ -1012,6 +1028,7 @@ class StudioApp:
         parts.append("F6:RunAll")
         parts.append("F7:Add")
         parts.append("F8:Del")
+        parts.append("F2:Docs")
         parts.append("Ctrl+↑↓:Nav")
         parts.append("Ctrl+T:Type")
         parts.append("F10:Save")
@@ -1038,14 +1055,25 @@ class StudioApp:
                 self._build_cell_widget(cell, i)
                 for i, cell in enumerate(self.notebook.cells)
             ]
-            parts.append(ScrollablePane(HSplit(cell_widgets)))
+            cells_pane = ScrollablePane(HSplit(cell_widgets))
         else:
-            parts.append(Window(
+            cells_pane = Window(
                 FormattedTextControl(
                     "\n\n    Empty notebook. Press F7 to add a cell.\n"
                 ),
                 height=5,
-            ))
+            )
+
+        # Side-by-side layout when help panel is open
+        if self._show_help_panel:
+            help_panel = Window(
+                FormattedTextControl(STUDIO_HELP_PANEL),
+                width=61,
+                style="fg:ansicyan",
+            )
+            parts.append(VSplit([cells_pane, help_panel]))
+        else:
+            parts.append(cells_pane)
 
         parts.append(self._build_message_bar())
         parts.append(self._build_toolbar())

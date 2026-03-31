@@ -98,9 +98,23 @@ tr  mord  lmord  turn  grace  appoggiatura  trem  gliss  arp  roll
 | Command | Description |
 |---------|-------------|
 | `help` | Show the full help text |
+| `docs` | List all quick-reference topics |
+| `docs <topic>` | Show docs for a topic (e.g. `docs drums`, `docs layers`) |
 | `quit` / `exit` | Exit the REPL |
 | `instruments` | List all GM instrument names |
 | `sf` | Show SoundFont configuration |
+
+## Syntax Suggestions
+
+As you type, Delphi shows ghost-text hints for what you could type next:
+
+- After a note (`C4`) → suggests a duration (`:q`)
+- After a drum name (`kick`) → suggests Euclidean syntax (`(3,8)`)
+- After a bar pipe (`|`) → suggests a chord (`Cmaj7 |`)
+- After `play(` → suggests a notation string
+- After an opening `{` → suggests a drum layer pattern
+
+Press **→** (right arrow) to accept the suggestion, or keep typing to ignore it. History-based suggestions are used as a fallback.
 
 ## Syntax Highlighting
 
@@ -117,9 +131,13 @@ All of these are available in the REPL namespace:
 ### Playback & Export
 ```python
 play(notation)                    # Parse and play notation
+play(notation, channel=2)         # Override MIDI channel
+play(notation, instrument="flute")  # Override instrument
 play_notes(tuples)                # Play raw MIDI tuples
 export(path, notation)            # Export to MIDI or WAV
 ```
+
+> **SoundFont-first:** `play()` uses SoundFont playback by default for all instruments, including drums (auto-routed to MIDI channel 9). If no SoundFont is installed, it falls back to a basic oscillator synth. Run `ensure_soundfont()` to download the default SoundFont.
 
 ### Context
 ```python

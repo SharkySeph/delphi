@@ -17,6 +17,7 @@ import traceback
 
 import delphi
 from delphi.song import GM_INSTRUMENTS
+from delphi.help import get_docs, get_docs_index, get_suggestion
 
 
 # ── Syntax Highlighting via Pygments ─────────────────────────
@@ -129,7 +130,7 @@ _FUNCTIONS = [
     'get_context()', 'reset_context()',
 ]
 
-_COMMANDS = ["help", "quit", "exit", "songs", "tracks", "instruments", "sf"]
+_COMMANDS = ["help", "quit", "exit", "songs", "tracks", "instruments", "sf", "docs"]
 
 _INSTRUMENTS = sorted(GM_INSTRUMENTS.keys())
 
@@ -145,6 +146,14 @@ class DelphiCompleter(Completer):
             return
 
         wl = word.lower()
+
+        # After "docs " → complete topic names
+        if text.lstrip().startswith("docs "):
+            from delphi.help import TOPIC_INDEX
+            for topic in TOPIC_INDEX:
+                if topic.startswith(wl):
+                    yield Completion(topic, start_position=-len(word))
+            return
 
         # Inside a string argument for program= or instrument() → instrument names
         if 'program="' in text or "program='" in text or 'instrument("' in text or "instrument('" in text:
@@ -227,6 +236,32 @@ class DelphiCompleter(Completer):
                                      display=inst)
 
 
+# ── Syntax Suggestions ───────────────────────────────────────
+
+from prompt_toolkit.auto_suggest import AutoSuggest, Suggestion
+
+
+class DelphiAutoSuggest(AutoSuggest):
+    """Contextual syntax suggestions with history fallback.
+
+    Shows ghost-text hints for what you could type next based on
+    the current input (e.g. a duration after a note, a chord after
+    a bar pipe). Falls back to history-based suggestions when no
+    contextual suggestion matches.
+    """
+
+    def __init__(self):
+        self._history = AutoSuggestFromHistory()
+
+    def get_suggestion(self, buffer, document):
+        text = document.text_before_cursor
+        hint = get_suggestion(text)
+        if hint:
+            return Suggestion(hint)
+        # Fall back to history
+        return self._history.get_suggestion(buffer, document)
+
+
 # ── Key Bindings ─────────────────────────────────────────────
 
 _bindings = KeyBindings()
@@ -262,6 +297,7 @@ Type expressions to play music. Try: play("C4 E4 G4 C5")
   play("C4 E4 G4")           Play notes explicitly
   chord("Am7").play()         Play a chord
   tempo(90)                   Change tempo
+  docs                        Quick-reference topics
   help                        Show all commands
   quit                        Exit
 """.format(version=delphi.__version__)
@@ -404,6 +440,8 @@ HELP_TEXT = """
 \033[1;33m━━ Utility Commands ━━\033[0m
   instruments                List all GM instrument names
   sf                         Show SoundFont status
+  docs                       List all quick-reference topics
+  docs <topic>               Show docs for a topic (e.g. docs drums)
   songs                      Show defined Song objects
   help                       This help text
   quit / exit                Leave the REPL
@@ -439,7 +477,7 @@ def run_repl(project_dir: str | None = None):
 
     session_kwargs = dict(
         history=FileHistory(history_path),
-        auto_suggest=AutoSuggestFromHistory(),
+        auto_suggest=DelphiAutoSuggest(),
         completer=DelphiCompleter(),
         key_bindings=_bindings,
         multiline=False,
@@ -526,6 +564,15 @@ def run_repl(project_dir: str | None = None):
 
         if text == "sf":
             delphi.soundfont_info()
+            continue
+
+        if text == "docs":
+            print(get_docs_index())
+            continue
+
+        if text.startswith("docs "):
+            topic = text[5:].strip()
+            print(get_docs(topic))
             continue
 
         if text == "songs":

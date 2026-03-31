@@ -221,7 +221,7 @@ class Song:
         ))
         return self
 
-    def play(self) -> None:
+    def play(self, stop_flag=None) -> None:
         """Play all tracks using SoundFont if available, else built-in synth."""
         sf_tuples = self._build_sf_tuples()
         if not sf_tuples:
@@ -235,7 +235,7 @@ class Song:
         if sf_path:
             try:
                 from delphi._engine import play_sf
-                play_sf(sf_path, sf_tuples, bpm=self.tempo)
+                play_sf(sf_path, sf_tuples, bpm=self.tempo, stop_flag=stop_flag)
                 return
             except ImportError:
                 pass  # Rust engine not built, fall through
@@ -253,7 +253,7 @@ class Song:
         old_bpm = ctx.bpm
         ctx.bpm = self.tempo
         try:
-            play_notes(all_tuples)
+            play_notes(all_tuples, stop_flag=stop_flag)
         finally:
             ctx.bpm = old_bpm
 

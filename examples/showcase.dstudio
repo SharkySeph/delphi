@@ -49,7 +49,7 @@
     },
     {
       "type": "notation",
-      "source": "# @instrument strings\n# @track Pad\n# @velocity 55\n\nD4,F4,A4:w D4,F4,A4:w\nC4,E4,A4:w C4,E4,A4:w\nBb3,D4,F4:w Bb3,D4,F4:w\nBb3,D4,G4:w Bb3,D4,G4:w\n\nA3,D4,F4:w A3,D4,F4:w\nA3,C4,E4:w A3,C4,E4:w\nBb3,D4,F4:w Bb3,D4,F4:w\nA3,C#4,E4:w A3,C#4,E4:w\n\nD4,F4,A4:w D4,F4,A4:w\nC4,E4,A4:w C4,E4,A4:w\nBb3,D4,F4:w Bb3,D4,F4:w\nBb3,D4,G4:w Bb3,D4,G4:w\n\nA3,D4,F4:w A3,D4,F4:w\nA3,C4,E4:w A3,C4,E4:w\nBb3,D4,F4,A4:w Bb3,D4,F4,A4:w\nA3,C#4,E4,G4:w A3,C#4,E4,G4:w",
+      "source": "# @instrument strings\n# @track Pad\n# @velocity 55\n\nD4,F4,A4:w C4,E4,A4:w Bb3,D4,F4:w Bb3,D4,G4:w\nA3,D4,F4:w A3,C4,E4:w Bb3,D4,F4:w A3,C#4,E4:w\nD4,F4,A4:w C4,E4,A4:w Bb3,D4,F4:w Bb3,D4,G4:w\nA3,D4,F4:w A3,C4,E4:w Bb3,D4,F4,A4:w A3,C#4,E4,G4:w",
       "meta": {
         "label": "Pad",
         "program": "strings"

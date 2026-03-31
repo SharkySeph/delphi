@@ -136,8 +136,12 @@ When exporting to MIDI, the following effects are written as MIDI Control Change
 
 ## Playback & Export
 
+Delphi uses **SoundFont playback by default** for all instruments and drums. The built-in oscillator synth is only used as a fallback when no SoundFont is available. Run `ensure_soundfont()` to download the default SoundFont.
+
+Drum tracks are automatically routed to MIDI channel 9 — no manual channel assignment needed.
+
 ```python
-# Play through speakers (uses SoundFont if available)
+# Play through speakers (SoundFont is default)
 song.play()
 
 # Render to WAV file
