@@ -67,8 +67,13 @@ def main():
 
     if cmd == "studio":
         target = args[1] if len(args) > 1 else None
+        # Resolve bundled examples: "delphi studio showcase" → bundled showcase.dstudio
+        if target:
+            target = _resolve_example(target) or target
         from delphi.studio import run_studio
         run_studio(target)
+    elif cmd == "examples":
+        _examples_command(args[1:])
     elif cmd == "init":
         name = args[1] if len(args) > 1 else None
         _init_project(name)
@@ -80,15 +85,17 @@ def main():
     elif cmd == "projects":
         _list_projects()
     elif cmd == "run" and len(args) > 1:
-        _run_script(args[1])
+        path = _resolve_example(args[1]) or args[1]
+        _run_script(path)
     elif cmd in ("--help", "-h"):
         _print_help()
     elif cmd in ("--version", "-V"):
         import delphi
         print(f"Delphi {delphi.__version__}")
     else:
-        # Treat argument as a script file
-        _run_script(cmd)
+        # Treat argument as a script file, checking bundled examples first
+        path = _resolve_example(cmd) or cmd
+        _run_script(path)
 
 
 def _run_script(path: str):
@@ -138,6 +145,99 @@ def _run_script(path: str):
     exec(compile(code, path, "exec"), namespace)
 
 
+# ── Bundled examples ─────────────────────────────────────────
+
+def _get_examples_dir() -> Path:
+    """Return the path to the bundled examples directory."""
+    return Path(__file__).parent / "examples"
+
+
+def _resolve_example(name: str) -> str | None:
+    """If `name` matches a bundled example, return its absolute path.
+
+    Tries exact match first, then with common extensions appended.
+    Returns None if the name refers to an existing local file (prefer local).
+    """
+    # If it already exists as a local file, don't override it
+    if os.path.exists(name):
+        return None
+
+    examples_dir = _get_examples_dir()
+    if not examples_dir.is_dir():
+        return None
+
+    # Try exact match
+    candidate = examples_dir / name
+    if candidate.is_file():
+        return str(candidate)
+
+    # Try with common extensions
+    for ext in (".delphi", ".dstudio", ".py"):
+        candidate = examples_dir / (name + ext)
+        if candidate.is_file():
+            return str(candidate)
+
+    return None
+
+
+def _examples_command(args: list[str]) -> None:
+    """Handle 'delphi examples [name]'."""
+    examples_dir = _get_examples_dir()
+
+    if not examples_dir.is_dir():
+        print("  No bundled examples found.")
+        return
+
+    examples = sorted(p for p in examples_dir.iterdir()
+                      if p.is_file() and not p.name.startswith(("_", ".")))
+
+    if not args:
+        # List all examples
+        print("\n\033[1mBundled examples:\033[0m\n")
+        for ex in examples:
+            suffix = ex.suffix
+            kind = {"delphi": "script", "dstudio": "studio notebook"}.get(
+                suffix.lstrip("."), "file"
+            )
+            print(f"  {ex.name:<25s} ({kind})")
+        print(f"\n  Run an example:    delphi run <name>")
+        print(f"  Open in Studio:    delphi studio <name>")
+        print(f"  Copy to cwd:       delphi examples --copy <name>\n")
+        return
+
+    if args[0] == "--copy":
+        # Copy an example to the current directory
+        name = args[1] if len(args) > 1 else None
+        if not name:
+            print("Usage: delphi examples --copy <name>")
+            return
+        src = _resolve_example(name)
+        if not src:
+            print(f"  Example '{name}' not found.")
+            return
+        import shutil
+        dest = Path.cwd() / Path(src).name
+        if dest.exists():
+            print(f"  '{dest.name}' already exists in current directory.")
+            return
+        shutil.copy2(src, dest)
+        print(f"  Copied → {dest}")
+        return
+
+    # Run the named example
+    name = args[0]
+    path = _resolve_example(name)
+    if not path:
+        print(f"  Example '{name}' not found. Run 'delphi examples' to list all.")
+        return
+
+    if path.endswith(".dstudio"):
+        from delphi.studio import run_studio
+        run_studio(path)
+    else:
+        _run_script(path)
+
+
 def _print_help():
     print("""
 Delphi — Music scripting language
@@ -147,6 +247,9 @@ Usage:
     delphi studio [target]  Open Delphi Studio notebook TUI
     delphi init [name]      Create a new Delphi project
     delphi open [path]      Open a project directory in the REPL
+    delphi examples         List bundled example scripts
+    delphi examples <name>  Run a bundled example
+    delphi examples --copy <name>  Copy an example to current directory
     delphi projects         List projects in your projects directory
     delphi config           Show current configuration
     delphi config <k> <v>   Set a config value

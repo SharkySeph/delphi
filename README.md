@@ -143,7 +143,8 @@ delphi open .
 ### Run a script
 
 ```bash
-delphi examples/twinkle.delphi
+delphi run twinkle              # Run a bundled example
+delphi run my-script.delphi     # Run a local file
 ```
 
 ### CLI commands
@@ -153,9 +154,12 @@ delphi examples/twinkle.delphi
 | `delphi` | Launch REPL (auto-detects project in cwd) |
 | `delphi studio` | Open Delphi Studio (terminal notebook IDE) |
 | `delphi studio <name>` | Open a project or `.dstudio` file in Studio |
+| `delphi examples` | List bundled example scripts |
+| `delphi examples <name>` | Run a bundled example |
+| `delphi examples --copy <name>` | Copy an example to current directory |
 | `delphi init <name>` | Create a new Delphi project |
 | `delphi open [path]` | Open a project directory in the REPL |
-| `delphi run <file>` | Run a `.delphi` script |
+| `delphi run <file>` | Run a `.delphi` script (checks bundled examples first) |
 | `delphi <file>` | Run a script (shorthand) |
 | `delphi --version` | Show version |
 | `delphi --help` | Show help |
@@ -217,6 +221,7 @@ A terminal notebook IDE for composing multi-track songs — think Jupyter meets 
 ```bash
 delphi studio                    # New empty notebook
 delphi studio my-song            # Open project as notebook
+delphi studio showcase           # Open bundled showcase example
 delphi studio song.dstudio       # Open saved notebook file
 ```
 

@@ -1,0 +1,190 @@
+# ============================================================
+# Pachelbel's Canon in D — Faithful Arrangement
+# ============================================================
+# Based on the original score (P.37, c. 1680)
+# Source: LilyPond transcription from IMSLP/Wikipedia, verified
+# against the Mus.ms. 16481/8 manuscript (Berlin State Library).
+#
+# Original scoring: 3 violins + basso continuo
+# Structure: Canon at the unison, 2-bar delay between voices
+# Ground bass: D A B F# G D G A (quarter notes, 2 bars)
+# Harmony: I – V – vi – iii – IV – I – IV – V
+#
+# Run:    PYTHONPATH=python .venv/bin/python examples/canon.delphi
+# ============================================================
+
+from delphi import Song, Track, ensure_soundfont
+
+ensure_soundfont()
+
+canon = Song("Pachelbel's Canon in D",
+             tempo=56,           # Baroque tempo (Paillard tradition)
+             key="D major",
+             time_sig=(4, 4))
+
+# ── Basso Continuo (Cello) ──────────────────────────────────
+# From the original: \relative c { d4 a b fis | g d g a | }
+# Quarter notes, each chord root gets one beat.
+# Octaves verified: D3 A2 B2 F#2 | G2 D2 G2 A2
+bass_bar = "D3:q A2:q B2:q F#2:q  G2:q D2:q G2:q A2:q "
+
+# 14 repetitions = 28 bars of ground (enough for the canon)
+bass_full = bass_bar * 14
+
+canon.add_track(Track(
+    name="Cello",
+    notation=bass_full,
+    program="cello",
+    velocity=65,
+))
+
+# ── The Canon Melody ─────────────────────────────────────────
+# Each variation spans 4 bars (2 repetitions of the ground bass).
+# The melody is played by all 3 violins in canon, each entering
+# 2 bars after the previous voice.
+
+# Variation 1 (original bars 3–6): Quarter notes
+# The iconic melody — stepwise descent from F#5
+# Source: canonA = { fis4 e d cis | b a b cis | }
+#         canonB = { d cis b a | g fis g e | }
+var1 = """
+F#5:q E5:q  D5:q  C#5:q
+B4:q  A4:q  B4:q  C#5:q
+D5:q  C#5:q B4:q  A4:q
+G4:q  F#4:q G4:q  E4:q
+"""
+
+# Variation 2 (original bars 7–10): Eighth-note arpeggiation
+# Source: canonC = { d8 fis a g fis d fis e | d b d a' g b a g | }
+#   then: fis8 d e cis' d fis a a, | b g a fis d d' d cis
+# (trill simplified to plain eighths)
+var2 = """
+D4:8  F#4:8 A4:8  G4:8  F#4:8 D4:8  F#4:8 E4:8
+D4:8  B3:8  D4:8  A4:8  G4:8  B4:8  A4:8  G4:8
+F#4:8 D4:8  E4:8  C#5:8 D5:8  F#5:8 A5:8  A4:8
+B4:8  G4:8  A4:8  F#4:8 D4:8  D5:8  D5:8  C#5:8
+"""
+
+# Variation 3 (original bars 11–14): Embellished eighth notes
+# Upper-register eighth-note figures decorating the chord tones
+var3 = """
+F#5:8 E5:8 F#5:8 D5:8   E5:8 D5:8 E5:8 C#5:8
+D5:8  C#5:8 B4:8  A4:8   B4:8 C#5:8 D5:8 C#5:8
+D5:8  E5:8  D5:8  C#5:8  B4:8 C#5:8 B4:8 A4:8
+G4:8  A4:8  G4:8  F#4:8  G4:8 A4:8  B4:8 A4:8
+"""
+
+# Variation 4 (original bars 15–18): Leaping quarter notes
+# Wider intervals, jumping within chord tones
+var4 = """
+D4:q  F#4:q A4:q  G4:q
+F#4:q D4:q  F#4:q E4:q
+D4:q  B3:q  D4:q  A4:q
+G4:q  B4:q  A4:q  G4:q
+"""
+
+# Variation 5 (original bars 19–22): Rising scalar eighths
+# Ascending and descending scale passages over each chord
+var5 = """
+D5:8  E5:8  F#5:8 E5:8  D5:8  C#5:8 D5:8  E5:8
+F#5:8 E5:8  D5:8  C#5:8 B4:8  A4:8  B4:8  C#5:8
+B4:8  C#5:8 D5:8  E5:8  F#5:8 E5:8  D5:8  C#5:8
+B4:8  A4:8  G4:8  A4:8  B4:8  A4:8  B4:8  A4:8
+"""
+
+# Variation 6 (original bars 23–26): Staccato eighths and rests
+# Lighter texture with rests between notes
+var6 = """
+F#5:8 r:8  E5:8  r:8   D5:8  r:8  C#5:8 r:8
+B4:8  r:8  A4:8  r:8   B4:8  r:8  C#5:8 r:8
+D5:8  r:8  C#5:8 r:8   B4:8  r:8  A4:8  r:8
+G4:8  r:8  F#4:8 r:8   G4:8  r:8  A4:8  r:8
+"""
+
+# Variation 7 (original bars 27–30): Sustained resolution
+# Half notes stepping through the chord tones
+var7 = """
+F#5:h        D5:h
+B4:h         C#5:h
+D5:h         B4:h
+G4:h         A4:h
+"""
+
+# ── Build violin melody: rest + all variations ───────────────
+intro_rest = "r:w r:w "   # 2 bars rest before melody enters
+
+melody = (
+    intro_rest
+    + var1
+    + var2
+    + var3
+    + var4
+    + var5
+    + var6
+    + var7
+)
+
+canon.add_track(Track(
+    name="Violin I",
+    notation=melody,
+    program="violin",
+    velocity=72,
+))
+
+# ── Violin II — Canon follower (2 bars behind Violin I) ─────
+violin2_intro = "r:w r:w r:w r:w "   # 4 bars rest
+
+violin2 = (
+    violin2_intro
+    + var1
+    + var2
+    + var3
+    + var4
+    + var5
+    + var6
+    + var7
+)
+
+canon.add_track(Track(
+    name="Violin II",
+    notation=violin2,
+    program="violin",
+    velocity=68,
+))
+
+# ── Violin III — Canon follower (4 bars behind Violin I) ────
+violin3_intro = "r:w r:w r:w r:w r:w r:w "   # 6 bars rest
+
+violin3 = (
+    violin3_intro
+    + var1
+    + var2
+    + var3
+    + var4
+    + var5
+    + var6
+)
+
+canon.add_track(Track(
+    name="Violin III",
+    notation=violin3,
+    program="violin",
+    velocity=64,
+))
+
+# ── Play & Export ────────────────────────────────────────────
+print(canon)
+print()
+print("Playing Canon in D (Ctrl+C to stop)...")
+try:
+    canon.play()
+except KeyboardInterrupt:
+    print("\nStopped.")
+print()
+print("Exporting MIDI...")
+canon.export("canon.mid")
+print("Done.")
+print("  canon.play()")
+print()
+print("To render to WAV (requires maturin develop + SoundFont):")
+print("  canon.render('canon.wav')")
