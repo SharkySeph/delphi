@@ -159,6 +159,7 @@ class Notebook:
     song: Song | None = field(default=None, repr=False)
 
     _next_id: int = field(default=1, repr=False)
+    _stop_flag: object = field(default=None, repr=False)  # StopFlag from Rust engine
 
     def add_cell(
         self,
@@ -199,10 +200,19 @@ class Notebook:
 
     def _build_namespace(self) -> dict:
         """Build exec namespace with delphi functions."""
+        # Wrap play functions to pass our stop flag for cancellation
+        stop = self._stop_flag
+
+        def _play(notation, stop_flag=None, **kwargs):
+            return delphi.play(notation, stop_flag=stop or stop_flag, **kwargs)
+
+        def _play_notes(tuples, stop_flag=None):
+            return delphi.play_notes(tuples, stop_flag=stop or stop_flag)
+
         ns = {
             "__builtins__": __builtins__,
-            "play": delphi.play,
-            "play_notes": delphi.play_notes,
+            "play": _play,
+            "play_notes": _play_notes,
             "export": delphi.export,
             "tempo": delphi.tempo,
             "key": delphi.key,
@@ -277,7 +287,12 @@ class Notebook:
             if cell.instrument:
                 info += f" [{cell.instrument}]"
 
-            delphi.play(clean_source)
+            delphi.play(
+                clean_source,
+                stop_flag=self._stop_flag,
+                channel=cell.channel,
+                instrument=cell.instrument,
+            )
             return info
         except KeyboardInterrupt:
             return "⏹ Stopped"
@@ -346,7 +361,7 @@ class Notebook:
 
                 if _looks_like_notation(stripped):
                     _flush_code()
-                    delphi.play(stripped)
+                    delphi.play(stripped, stop_flag=self._stop_flag)
                     played += 1
                 else:
                     code_block.append(line)
@@ -567,7 +582,6 @@ class StudioApp:
     def __init__(self, notebook: Notebook):
         self.notebook = notebook
         self.focused_cell: int = 0     # index into notebook.cells
-        self.namespace = notebook._build_namespace()
         self.message: str = ""         # status line message
         self._buffers: dict[int, Buffer] = {}
         self._confirm_delete: bool = False   # F8 pressed once → confirm
@@ -575,6 +589,16 @@ class StudioApp:
         self._playing: bool = False          # playback in progress
         self._play_thread: threading.Thread | None = None
         self._dirty: bool = False            # unsaved changes
+
+        # Create a StopFlag for cancelling Rust-engine playback
+        try:
+            from delphi._engine import StopFlag
+            self._stop_flag = StopFlag()
+        except ImportError:
+            self._stop_flag = None
+        notebook._stop_flag = self._stop_flag
+
+        self.namespace = notebook._build_namespace()
         self._build_app()
 
     # ── Buffer management ─────────────────────────────────────
@@ -737,6 +761,8 @@ class StudioApp:
         def stop_playback(event):
             if self._playing:
                 self._playing = False
+                if self._stop_flag is not None:
+                    self._stop_flag.stop()
                 self.message = "⏹ Stopped"
                 self._refresh_layout()
 
@@ -780,6 +806,8 @@ class StudioApp:
     def _run_cell_async(self, cell: Cell):
         """Run a cell with a 'Playing…' indicator in a background thread."""
         self._playing = True
+        if self._stop_flag is not None:
+            self._stop_flag.reset()
         cell.output = "▶ Playing…"
         self.message = f"▶ Cell [{cell.id}] running…"
         self._refresh_layout()

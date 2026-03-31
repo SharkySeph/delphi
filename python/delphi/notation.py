@@ -678,6 +678,41 @@ def _parse_sequence(notation: str, default_duration: Optional[int],
             i += 1
             continue
 
+        # ── Layer group: {bd(3,8) sd(2,8) hh(5,8)} ───
+        # All patterns inside braces start at the same tick.
+        # current_tick advances by the longest sub-pattern.
+        if token.startswith("{") and token.endswith("}"):
+            inner = token[1:-1].strip()
+            layer_tokens = _tokenize(inner)
+            layer_start = current_tick
+            max_end = current_tick
+            for lt in layer_tokens:
+                # Parse each sub-token starting at the same tick
+                sub_tick = layer_start
+                lem = EUCLIDEAN_RE.match(lt)
+                if lem:
+                    base_tok = lem.group(1)
+                    lbeats = int(lem.group(2))
+                    lsteps = int(lem.group(3))
+                    loffset = int(lem.group(4)) if lem.group(4) else 0
+                    pat = euclidean(lbeats, lsteps, loffset)
+                    step_d = default_duration
+                    for hit in pat:
+                        if hit:
+                            evt = _parse_token(base_tok, sub_tick, step_d, default_velocity)
+                            if evt is not None:
+                                events.append(evt)
+                        sub_tick += step_d
+                else:
+                    evt = _parse_token(lt, sub_tick, default_duration, default_velocity)
+                    if evt is not None:
+                        events.append(evt)
+                    sub_tick += evt.duration_ticks if evt else default_duration
+                max_end = max(max_end, sub_tick)
+            current_tick = max_end
+            i += 1
+            continue
+
         # ── Euclidean rhythm: bd(3,8) or bd(3,8,2) ────
         em = EUCLIDEAN_RE.match(token)
         if em:
@@ -849,13 +884,25 @@ def _parse_sequence(notation: str, default_duration: Optional[int],
 
 
 def _tokenize(notation: str) -> list[str]:
-    """Tokenize notation, keeping bracket/angle groups and parens together."""
+    """Tokenize notation, keeping bracket/angle/brace groups and parens together."""
     tokens = []
     i = 0
     chars = notation.strip()
 
     while i < len(chars):
-        if chars[i] == "[":
+        if chars[i] == "{":
+            # Find matching } (layer group)
+            depth = 1
+            j = i + 1
+            while j < len(chars) and depth > 0:
+                if chars[j] == "{":
+                    depth += 1
+                elif chars[j] == "}":
+                    depth -= 1
+                j += 1
+            tokens.append(chars[i:j])
+            i = j
+        elif chars[i] == "[":
             # Find matching ]
             depth = 1
             j = i + 1

@@ -1,52 +1,84 @@
 """
 Playback interface — bridges the Python DSL to the Rust audio engine.
-Falls back to a pure-Python beep if the Rust engine isn't built yet.
+
+Prefers SoundFont playback for all instruments (including drums on channel 9).
+Falls back to the built-in oscillator synth if no SoundFont is available,
+and to a pure-Python text dump if the Rust engine isn't built.
 """
 
 from delphi.context import get_context
 from delphi.notation import parse, events_to_tuples
 
 
-def play(notation: str) -> None:
+def play(notation: str, stop_flag=None, channel=None, instrument=None) -> None:
     """
-    Parse and play a notation string using the current instrument.
+    Parse and play a notation string.
 
-    Examples:
-        play("C4 E4 G4")
-        play("| Cmaj7 | Am7 | Fmaj7 | G7 |")
+    Uses SoundFont playback by default. Drum events are automatically
+    routed to MIDI channel 9. Falls back to the built-in oscillator
+    synth only when no SoundFont is available.
 
-    The instrument is set via instrument("violin"), etc.
-    Defaults to piano (program 0).
+    Args:
+        notation: A Delphi notation string.
+        stop_flag: Optional StopFlag for cancellation.
+        channel: Override MIDI channel (0-15). Drums auto-route to 9.
+        instrument: Override instrument name (e.g. "violin", "flute").
     """
     ctx = get_context()
     events = parse(notation, default_velocity=80)
+
+    # Resolve program number: explicit arg > context
+    program = ctx.program
+    if instrument:
+        from delphi.song import GM_INSTRUMENTS
+        key = instrument.lower().strip()
+        if key in GM_INSTRUMENTS:
+            program = GM_INSTRUMENTS[key]
+
+    # Try SoundFont first — it handles all GM instruments + drums properly
+    from delphi.soundfont import get_soundfont_path
+    sf_path = get_soundfont_path()
+    if sf_path:
+        try:
+            from delphi._engine import play_sf
+            sf_tuples = _events_to_sf_tuples(events, program, channel)
+            if not sf_tuples:
+                print("(nothing to play)")
+                return
+            play_sf(sf_path, sf_tuples, bpm=ctx.bpm, stop_flag=stop_flag)
+            return
+        except ImportError:
+            pass  # Rust engine not built — fall through
+
+    # Fallback: basic oscillator synth (no instrument variety, no drums)
     tuples = events_to_tuples(events)
     if not tuples:
         print("(nothing to play)")
         return
-
-    # If a non-default instrument is set, use SoundFont playback
-    if ctx.program != 0:
-        from delphi.soundfont import get_soundfont_path
-        sf_path = get_soundfont_path()
-        if sf_path:
-            try:
-                from delphi._engine import play_sf
-                sf_tuples = [
-                    (midi, vel, tick, dur, 0, ctx.program)
-                    for midi, vel, tick, dur in tuples
-                ]
-                play_sf(sf_path, sf_tuples, bpm=ctx.bpm)
-                return
-            except ImportError:
-                pass  # Fall through to basic synth
-            except Exception:
-                pass
-
-    play_notes(tuples)
+    play_notes(tuples, stop_flag=stop_flag)
 
 
-def play_notes(tuples: list[tuple[int, int, int, int]]) -> None:
+def _events_to_sf_tuples(events, program: int, channel=None):
+    """Convert parsed events to SoundFont tuples: (midi, vel, tick, dur, channel, program).
+
+    Drum events are always routed to channel 9 with program 0.
+    Other events use the provided channel/program.
+    """
+    sf_tuples = []
+    ch = channel if channel is not None else 0
+    for evt in events:
+        if evt.kind == "rest":
+            continue
+        if evt.kind == "drum":
+            for midi, vel, tick, dur in evt.to_tuples():
+                sf_tuples.append((midi, vel, tick, dur, 9, 0))
+        else:
+            for midi, vel, tick, dur in evt.to_tuples():
+                sf_tuples.append((midi, vel, tick, dur, ch, program))
+    return sf_tuples
+
+
+def play_notes(tuples: list[tuple[int, int, int, int]], stop_flag=None) -> None:
     """
     Play raw note tuples: (midi_note, velocity, tick, duration_ticks).
     Uses the Rust engine if available, otherwise a pure-Python fallback.
@@ -54,7 +86,7 @@ def play_notes(tuples: list[tuple[int, int, int, int]]) -> None:
     ctx = get_context()
     try:
         from delphi._engine import play_events
-        play_events(tuples, bpm=ctx.bpm)
+        play_events(tuples, bpm=ctx.bpm, stop_flag=stop_flag)
     except ImportError:
         _fallback_play(tuples, ctx.bpm)
 

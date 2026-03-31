@@ -13,6 +13,7 @@ fn _engine(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<types::PyChord>()?;
     m.add_class::<types::PyScale>()?;
     m.add_class::<types::PyKey>()?;
+    m.add_class::<engine::StopFlag>()?;
 
     // Engine functions
     m.add_function(wrap_pyfunction!(engine::play_events, m)?)?;
