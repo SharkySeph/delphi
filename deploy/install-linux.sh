@@ -61,7 +61,7 @@ echo "⚙  Installing Delphi..."
 if [[ -z "$DELPHI_VERSION" ]]; then
     DELPHI_VERSION="$(curl -sSf "https://api.github.com/repos/${GITHUB_REPO}/releases/latest" \
         | $PYTHON -c 'import sys,json; print(json.load(sys.stdin)["tag_name"].lstrip("v"))' 2>/dev/null)" || {
-        echo "Error: Could not find a release. Set DELPHI_VERSION=0.6.0" >&2; exit 1
+        echo "Error: Could not find a release. Set DELPHI_VERSION=0.6.1" >&2; exit 1
     }
 fi
 ARCH="$(uname -m)"

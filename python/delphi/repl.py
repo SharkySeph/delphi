@@ -127,7 +127,7 @@ _DYNAMICS = ["!ppp", "!pp", "!p", "!mp", "!mf", "!f", "!ff", "!fff",
              "!sfz", "!sfp", "!fp", "!rfz", "!fz"]
 
 _FUNCTIONS = [
-    'play("', 'export("', 'sheet("', 'tempo(', 'key("', 'time_sig(,
+    'play("', 'export("', 'sheet("', 'tempo(', 'key("', 'time_sig(',
     'swing(', 'humanize(', 'instrument("',
     'chord("', 'note("', 'scale("',
     'Song("', 'Track(', 'Section("', 'Pattern("', 'Voice("',

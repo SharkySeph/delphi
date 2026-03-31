@@ -89,7 +89,7 @@ If you prefer to manage it yourself, download the wheel for your platform from
 ```bash
 python3 -m venv ~/.local/share/delphi/venv
 source ~/.local/share/delphi/venv/bin/activate
-pip install /path/to/delphi-0.6.0-cp310-abi3-manylinux_2_28_x86_64.whl
+pip install /path/to/delphi-0.6.1-cp310-abi3-manylinux_2_28_x86_64.whl
 delphi --version
 ```
 

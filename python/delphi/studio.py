@@ -46,6 +46,12 @@ from delphi.notation import (
     format_preview,
     transpose as transpose_notation,
 )
+from delphi.livecode import (
+    build_source_map,
+    TickClock,
+    format_source_highlighted,
+    format_tracks_highlighted,
+)
 
 # Reuse the REPL's notation detector, syntax highlighter, and completer
 try:
@@ -631,6 +637,15 @@ class StudioApp:
 
         self.namespace = notebook._build_namespace()
         self._show_help_panel: bool = False   # F2 toggles reference panel
+
+        # Live code view state
+        self._live_mode: Optional[str] = None  # None | "cell" | "consolidated"
+        self._live_clock: Optional[TickClock] = None
+        self._live_cell_source: str = ""
+        self._live_cell_spans: list = []
+        self._live_tracks: list[dict] = []
+        self._live_timer: Optional[threading.Thread] = None
+
         self._build_app()
 
     # ── Buffer management ─────────────────────────────────────
@@ -664,18 +679,20 @@ class StudioApp:
         def run_cell(event):
             self._confirm_delete = False
             self._confirm_quit = False
-            self._run_focused_cell()
-            self._refresh_layout()
+            if not self.notebook.cells:
+                return
+            cell = self.notebook.cells[self.focused_cell]
+            if cell.cell_type == "notation" and cell.source.strip():
+                self._enter_live_cell(cell)
+            else:
+                self._run_focused_cell()
+                self._refresh_layout()
 
         @kb.add("f6")
         def run_all(event):
             self._confirm_delete = False
             self._confirm_quit = False
-            outputs = self.notebook.run_all()
-            self.namespace = self.notebook._build_namespace()
-            n_tracks = len(self.notebook.song.tracks) if self.notebook.song else 0
-            self.message = f"▶ Ran all — {n_tracks} track{'s' if n_tracks != 1 else ''}"
-            self._refresh_layout()
+            self._enter_live_consolidated()
 
         @kb.add("f7")
         @kb.add("c-b")
@@ -728,7 +745,7 @@ class StudioApp:
             self._confirm_quit = False
             path = self.notebook.save()
             self._dirty = False
-            self.message = f"💾 Saved → {path}"
+            self.message = f"Saved: {path}"
             self._refresh_layout()
 
         @kb.add("c-up")
@@ -794,6 +811,9 @@ class StudioApp:
 
         @kb.add("c-c")
         def stop_playback(event):
+            if self._live_mode:
+                self._exit_live_mode()
+                return
             if self._playing:
                 self._playing = False
                 if self._stop_flag is not None:
@@ -803,6 +823,8 @@ class StudioApp:
 
         @kb.add("c-e")
         def toggle_collapse(event):
+            if self._live_mode:
+                return
             if not self.notebook.cells:
                 return
             cell = self.notebook.cells[self.focused_cell]
@@ -854,7 +876,7 @@ class StudioApp:
                         cell._run_state = "stale"
                     else:
                         cell._run_state = "ready"
-                    self.message = f"👁 Preview of cell [{self.focused_cell + 1}]"
+                    self.message = f"Preview: cell [{self.focused_cell + 1}]"
                 else:
                     self.message = "No notation after pragmas"
             elif cell.cell_type == "code":
@@ -864,7 +886,258 @@ class StudioApp:
                 self.message = "Preview only works for notation cells"
             self._refresh_layout()
 
+        @kb.add("escape")
+        def escape_key(event):
+            if self._live_mode:
+                self._exit_live_mode()
+
         return kb
+
+    # ── Live code views ───────────────────────────────────────
+
+    def _enter_live_cell(self, cell: Cell):
+        """F5 on a notation cell: full-screen live code view."""
+        meta, clean_source = _parse_pragmas(cell.source)
+        if not clean_source:
+            self.message = "No notation to play"
+            self._refresh_layout()
+            return
+
+        self._playing = True
+        if self._stop_flag is not None:
+            self._stop_flag.reset()
+
+        # Build source map from the clean source (post-pragma)
+        spans = build_source_map(clean_source)
+        ctx = get_context()
+
+        self._live_mode = "cell"
+        self._live_cell_source = clean_source
+        self._live_cell_spans = spans
+        self._live_clock = TickClock(ctx.bpm)
+
+        # Show the live layout immediately
+        self.app.layout = self._build_live_layout()
+        self.app.invalidate()
+
+        # Start playback + clock in a background thread
+        self._live_clock.start()
+
+        def _do_play():
+            try:
+                instrument = meta.get("program", cell.instrument or "")
+                channel = cell.channel
+                delphi.play(
+                    clean_source,
+                    stop_flag=self._stop_flag,
+                    channel=channel,
+                    instrument=instrument,
+                    visualize=False,
+                )
+            except Exception:
+                pass
+            finally:
+                if self._live_clock:
+                    self._live_clock.stop()
+                self._playing = False
+                # Schedule a final refresh to exit live mode
+                try:
+                    self.app.invalidate()
+                except Exception:
+                    pass
+
+        self._play_thread = threading.Thread(target=_do_play, daemon=True)
+        self._play_thread.start()
+
+        # Start a refresh timer
+        self._start_live_refresh()
+
+    def _enter_live_consolidated(self):
+        """F6: consolidated multi-track live view."""
+        # Build the song first (runs code cells for setup)
+        s = self.notebook.settings
+        tempo_val = float(s.get("tempo", 120))
+        key_val = str(s.get("key", "C major"))
+        ts = str(s.get("time_sig", "4/4"))
+        ts_parts = ts.split("/") if "/" in ts else ["4", "4"]
+
+        self.notebook.song = Song(
+            self.notebook.title,
+            tempo=tempo_val,
+            key=key_val,
+            time_sig=(int(ts_parts[0]), int(ts_parts[1])),
+        )
+
+        ns = self.notebook._build_namespace()
+        track_data: list[dict] = []
+        track_count = 0
+
+        # Run code cells for side effects, collect notation tracks
+        for cell in self.notebook.cells:
+            if cell.cell_type == "code" and cell.source.strip():
+                try:
+                    self.notebook.run_cell(cell, ns)
+                except Exception:
+                    pass
+            elif cell.cell_type == "notation" and cell.source.strip():
+                meta, clean_source = _parse_pragmas(cell.source)
+                if not clean_source:
+                    continue
+
+                track_name = meta.get("track", cell.label or f"Track {track_count + 1}")
+                program = meta.get("program", cell.instrument or "piano")
+                velocity = int(meta.get("velocity", cell.velocity))
+                channel = meta.get("channel")
+                if channel is not None:
+                    channel = int(channel)
+
+                try:
+                    track = Track(
+                        name=track_name,
+                        notation=clean_source,
+                        program=program,
+                        channel=channel,
+                        velocity=velocity,
+                    )
+                    self.notebook.song.add_track(track)
+                    track_count += 1
+
+                    spans = build_source_map(clean_source)
+                    track_data.append({
+                        "label": track_name,
+                        "clean_source": clean_source,
+                        "spans": spans,
+                    })
+                except Exception:
+                    pass
+
+        if not track_data:
+            self.message = "No notation tracks to play"
+            self._refresh_layout()
+            return
+
+        self._playing = True
+        if self._stop_flag is not None:
+            self._stop_flag.reset()
+
+        ctx = get_context()
+        self._live_mode = "consolidated"
+        self._live_tracks = track_data
+        self._live_clock = TickClock(ctx.bpm)
+        self.namespace = self.notebook._build_namespace()
+
+        # Show the live layout
+        self.app.layout = self._build_live_layout()
+        self.app.invalidate()
+
+        # Start playback
+        self._live_clock.start()
+
+        def _do_play():
+            try:
+                self.notebook.song.play(stop_flag=self._stop_flag, visualize=False)
+            except Exception:
+                pass
+            finally:
+                if self._live_clock:
+                    self._live_clock.stop()
+                self._playing = False
+                try:
+                    self.app.invalidate()
+                except Exception:
+                    pass
+
+        self._play_thread = threading.Thread(target=_do_play, daemon=True)
+        self._play_thread.start()
+
+        self._start_live_refresh()
+
+    def _start_live_refresh(self):
+        """Start a background thread that refreshes the live view ~15 fps."""
+        def _refresh_loop():
+            while self._live_mode and self._playing:
+                time.sleep(0.066)  # ~15 fps
+                try:
+                    self.app.layout = self._build_live_layout()
+                    self.app.invalidate()
+                except Exception:
+                    break
+            # Playback finished — auto-exit live mode after a brief pause
+            if self._live_mode:
+                time.sleep(0.3)
+                self._live_mode = None
+                self._live_clock = None
+                try:
+                    self.app.layout = self._build_layout()
+                    self._focus_current_cell()
+                    self.app.invalidate()
+                except Exception:
+                    pass
+
+        self._live_timer = threading.Thread(target=_refresh_loop, daemon=True)
+        self._live_timer.start()
+
+    def _exit_live_mode(self):
+        """Exit live code view, stop playback."""
+        if self._stop_flag is not None:
+            self._stop_flag.stop()
+        self._playing = False
+        if self._live_clock:
+            self._live_clock.stop()
+        self._live_mode = None
+        self._live_clock = None
+        self.message = "⏹ Stopped"
+        self._refresh_layout()
+
+    def _build_live_layout(self) -> Layout:
+        """Build the layout for live code views."""
+        current_tick = self._live_clock.current_tick if self._live_clock else 0
+
+        if self._live_mode == "cell":
+            formatted = format_source_highlighted(
+                self._live_cell_source,
+                self._live_cell_spans,
+                current_tick,
+            )
+            content = FormattedTextControl(formatted)
+        elif self._live_mode == "consolidated":
+            formatted = format_tracks_highlighted(
+                self._live_tracks,
+                current_tick,
+            )
+            content = FormattedTextControl(formatted)
+        else:
+            return self._build_layout()
+
+        # Status line
+        ctx = get_context()
+        elapsed = 0.0
+        if self._live_clock and self._live_clock._start_time:
+            elapsed = time.monotonic() - self._live_clock._start_time
+        mins, secs = divmod(int(elapsed), 60)
+
+        status_text = (
+            f" Delphi Studio | LIVE"
+            f"  |  bpm={int(ctx.bpm)}  {ctx.key_name}"
+            f"  |  {mins}:{secs:02d}"
+        )
+        status = Window(
+            FormattedTextControl(status_text),
+            height=1,
+            style="bg:ansicyan fg:ansiblack bold",
+            wrap_lines=False,
+        )
+
+        toolbar = Window(
+            FormattedTextControl(" Ctrl+C: Stop   Esc: Exit"),
+            height=1,
+            style="reverse",
+            wrap_lines=False,
+        )
+
+        main_pane = ScrollablePane(Window(content))
+
+        return Layout(HSplit([status, main_pane, toolbar]))
 
     # ── Cell execution ─────────────────────────────────────────
 
@@ -970,19 +1243,19 @@ class StudioApp:
         title = self.notebook.title
         n_cells = len(self.notebook.cells)
         focus = self.focused_cell + 1 if self.notebook.cells else 0
-        dirty = " ●" if self._dirty else ""
+        dirty = " *" if self._dirty else ""
 
-        # Show LIVE context — what the engine actually has, not notebook defaults
         instrument_name = getattr(ctx, 'program_name', 'piano')
         status_text = (
-            f"  🎵 {title}{dirty}"
-            f"    ♩={int(ctx.bpm)}  {ctx.key_name}  🎹 {instrument_name}"
-            f"    [{focus}/{n_cells}]"
+            f" Delphi Studio | {title}{dirty}"
+            f"  |  bpm={int(ctx.bpm)}  {ctx.key_name}  [{instrument_name}]"
+            f"  |  Cell {focus}/{n_cells}"
         )
         return Window(
             FormattedTextControl(status_text),
             height=1,
             style="reverse",
+            wrap_lines=False,
         )
 
     def _build_cell_widget(self, cell: Cell, index: int):
@@ -1040,6 +1313,7 @@ class StudioApp:
             FormattedTextControl(header_text),
             height=1,
             style=header_style,
+            wrap_lines=False,
         )
 
         if cell.collapsed:
@@ -1054,7 +1328,7 @@ class StudioApp:
             editor = Window(
                 BufferControl(**editor_kwargs),
                 height=lambda b=buf: max(3, b.document.line_count + 1),
-                style="bg:#1a1a2e" if is_focused else "",
+                style="bg:ansiblack" if is_focused else "",
             )
             parts = [header, editor]
 
@@ -1074,14 +1348,11 @@ class StudioApp:
                 FormattedTextControl(indented),
                 height=min(output_lines, 5),
                 style=output_style,
+                wrap_lines=False,
             ))
 
         border_style = "fg:ansicyan" if is_focused else "fg:#444444"
-        parts.append(Window(
-            FormattedTextControl("─" * 60),
-            height=1,
-            style=border_style,
-        ))
+        parts.append(Window(char="─", height=1, style=border_style))
 
         return HSplit(parts)
 
@@ -1101,6 +1372,7 @@ class StudioApp:
             FormattedTextControl("  ".join(parts)),
             height=1,
             style="reverse",
+            wrap_lines=False,
         )
 
     def _build_message_bar(self):
@@ -1108,6 +1380,7 @@ class StudioApp:
         return Window(
             FormattedTextControl(f"  {text}"),
             height=1,
+            wrap_lines=False,
             style="fg:ansiyellow",
         )
 
