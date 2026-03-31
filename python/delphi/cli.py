@@ -104,6 +104,7 @@ def _run_script(path: str):
         "play": delphi.play,
         "play_notes": delphi.play_notes,
         "export": delphi.export,
+        "sheet": delphi.sheet,
         "tempo": delphi.tempo,
         "key": delphi.key,
         "time_sig": delphi.time_sig,

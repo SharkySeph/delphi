@@ -216,6 +216,7 @@ class Notebook:
         stop = self._stop_flag
 
         def _play(notation, stop_flag=None, **kwargs):
+            kwargs.setdefault("visualize", False)  # TUI conflicts with stdout viz
             return delphi.play(notation, stop_flag=stop or stop_flag, **kwargs)
 
         def _play_notes(tuples, stop_flag=None):
@@ -226,6 +227,7 @@ class Notebook:
             "play": _play,
             "play_notes": _play_notes,
             "export": delphi.export,
+            "sheet": delphi.sheet,
             "tempo": delphi.tempo,
             "key": delphi.key,
             "time_sig": delphi.time_sig,
@@ -583,6 +585,7 @@ class Notebook:
         if has_notation:
             lines.append('song.play()')
             lines.append('# song.export("output.mid")')
+            lines.append('# song.export("output.musicxml")  # sheet music')
             lines.append('')
 
         return '\n'.join(lines)
@@ -910,7 +913,7 @@ class StudioApp:
         self._play_thread.start()
 
     def _export(self):
-        """Export notebook to MIDI, WAV, or .delphi script."""
+        """Export notebook to MIDI, WAV, MusicXML, or .delphi script."""
         base = self.notebook.file_path or self.notebook.title.lower().replace(" ", "-")
         base = base.replace(".dstudio", "")
 
@@ -920,7 +923,7 @@ class StudioApp:
         if not self.notebook.song or not self.notebook.song.tracks:
             self.notebook.run_all()
 
-        # Export MIDI
+        # Export MIDI + WAV + MusicXML
         if self.notebook.song and self.notebook.song.tracks:
             mid_path = base + ".mid"
             try:
@@ -936,6 +939,14 @@ class StudioApp:
                 results.append(f"WAV → {wav_path}")
             except Exception as e:
                 results.append(f"WAV ✗ {e}")
+
+            # Export MusicXML (sheet music)
+            xml_path = base + ".musicxml"
+            try:
+                self.notebook.song.export(xml_path)
+                results.append(f"Sheet → {xml_path}")
+            except Exception as e:
+                results.append(f"Sheet ✗ {e}")
         else:
             results.append("No tracks to export (run F6 first)")
 

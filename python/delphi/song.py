@@ -221,12 +221,26 @@ class Song:
         ))
         return self
 
-    def play(self, stop_flag=None) -> None:
+    def play(self, stop_flag=None, visualize: bool = True) -> None:
         """Play all tracks using SoundFont if available, else built-in synth."""
         sf_tuples = self._build_sf_tuples()
         if not sf_tuples:
             print("(nothing to play)")
             return
+
+        # Start live visualizer across all tracks
+        viz_thread = None
+        if visualize:
+            try:
+                all_events = []
+                for t in self.tracks:
+                    if t.notation.strip():
+                        all_events.extend(parse(t.notation, default_velocity=t.velocity))
+                if all_events:
+                    from delphi.visualizer import visualize as _viz
+                    viz_thread = _viz(all_events, self.tempo, stop_flag=stop_flag)
+            except Exception:
+                pass  # visualizer is purely cosmetic
 
         # Try SoundFont playback first
         from delphi.soundfont import get_soundfont_path
@@ -236,6 +250,8 @@ class Song:
             try:
                 from delphi._engine import play_sf
                 play_sf(sf_path, sf_tuples, bpm=self.tempo, stop_flag=stop_flag)
+                if viz_thread is not None:
+                    viz_thread.join(timeout=1.0)
                 return
             except ImportError:
                 pass  # Rust engine not built, fall through
@@ -256,6 +272,8 @@ class Song:
             play_notes(all_tuples, stop_flag=stop_flag)
         finally:
             ctx.bpm = old_bpm
+            if viz_thread is not None:
+                viz_thread.join(timeout=1.0)
 
     def render(self, path: str) -> None:
         """Render the song to a WAV file using a SoundFont."""
@@ -307,17 +325,20 @@ class Song:
         return result
 
     def export(self, path: str) -> None:
-        """Export the song to a MIDI or WAV file."""
+        """Export the song to a MIDI, WAV, or MusicXML file."""
         if not self.tracks:
             print("(no tracks to export)")
             return
 
-        if path.endswith(".mid") or path.endswith(".midi"):
+        if path.endswith((".mid", ".midi")):
             _export_multitrack_midi(self, path)
         elif path.endswith(".wav"):
             self.render(path)
+        elif path.endswith((".xml", ".musicxml")):
+            from delphi.export import export_musicxml_song
+            export_musicxml_song(self, path)
         else:
-            raise ValueError(f"Unsupported export format: {path} (use .mid or .wav)")
+            raise ValueError(f"Unsupported export format: {path} (use .mid, .wav, .xml, or .musicxml)")
 
     def __repr__(self):
         track_names = ", ".join(t.name for t in self.tracks)

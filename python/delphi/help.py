@@ -176,6 +176,7 @@ TOPICS = {
   s.track("Drums", "{bd(3,8) sd(2,8) hh(5,8)}", program=0, channel=9)
   s.play()
   s.export("song.mid")
+  s.export("song.xml")             Sheet music (MusicXML)
   s.render("song.wav")
 
   Track effects:
@@ -248,11 +249,41 @@ TOPICS["track"] = TOPICS["songs"]
 TOPICS["ctx"] = TOPICS["context"]
 TOPICS["scale"] = TOPICS["theory"]
 
+TOPICS["sheet"] = """\
+\033[1mSheet Music Export (MusicXML)\033[0m
+
+  Single notation:
+    export("score.xml", "C4 E4 G4")       Export as MusicXML
+    export("score.musicxml", "| C | Am |")  Also valid extension
+    sheet("C4 E4 G4")                     Export & open in MuseScore
+    sheet("C4 E4 G4", "my_score.xml")     Custom filename
+
+  Multi-track Song:
+    s = Song("Canon", tempo=120, key="D major")
+    s.track("Violin", "D4 F#4 A4 D5", program="violin")
+    s.track("Cello", "| D | A | Bm |", program="cello")
+    s.export("canon.musicxml")            One part per track
+
+  Studio (F9):  Exports .mid + .wav + .musicxml automatically
+
+  What's included:
+    Key & time signatures, tempo, dynamics (ppp–fff),
+    articulations (staccato, accent, fermata, etc.),
+    ornaments (trill, mordent, turn), ties across barlines,
+    auto clef selection (treble/bass), chord voicings.
+
+  Open with: MuseScore (free), Finale, Sibelius, Dorico,
+             Flat.io, Noteflight, or any MusicXML-compatible app.
+"""
+TOPICS["musicxml"] = TOPICS["sheet"]
+TOPICS["xml"] = TOPICS["sheet"]
+TOPICS["export"] = TOPICS["sheet"]
+
 # Canonical topic names (no aliases) for the index listing
 TOPIC_INDEX = [
     "notes", "chords", "durations", "dynamics", "articulations",
     "drums", "layers", "bars", "rests", "repeats", "patterns",
-    "playback", "songs", "studio", "context", "theory",
+    "playback", "songs", "sheet", "studio", "context", "theory",
 ]
 
 

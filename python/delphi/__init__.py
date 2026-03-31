@@ -24,7 +24,7 @@ from delphi.notation import parse as parse_notation
 from delphi.notation import lint, preview, format_preview, transpose
 from delphi.theory import chord, scale, note
 from delphi.playback import play, play_notes
-from delphi.export import export
+from delphi.export import export, sheet
 from delphi.song import Song, Track, GM_INSTRUMENTS
 from delphi.composition import (
     Section,
@@ -51,7 +51,7 @@ def run_studio(target=None):
     from delphi.studio import run_studio as _run
     return _run(target)
 
-__version__ = "0.5.0"
+__version__ = "0.6.0"
 
 __all__ = [
     "tempo",
@@ -73,6 +73,7 @@ __all__ = [
     "play",
     "play_notes",
     "export",
+    "sheet",
     "Song",
     "Track",
     "GM_INSTRUMENTS",

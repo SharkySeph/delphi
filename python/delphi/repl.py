@@ -127,7 +127,7 @@ _DYNAMICS = ["!ppp", "!pp", "!p", "!mp", "!mf", "!f", "!ff", "!fff",
              "!sfz", "!sfp", "!fp", "!rfz", "!fz"]
 
 _FUNCTIONS = [
-    'play("', 'export("', 'tempo(', 'key("', 'time_sig(',
+    'play("', 'export("', 'sheet("', 'tempo(', 'key("', 'time_sig(,
     'swing(', 'humanize(', 'instrument("',
     'chord("', 'note("', 'scale("',
     'Song("', 'Track(', 'Section("', 'Pattern("', 'Voice("',
@@ -319,6 +319,7 @@ Type expressions to play music. Try: play("C4 E4 G4 C5")
   docs                        Quick-reference topics
   examples drums              Hear runnable examples
   preview("C4 E4 G4")        Preview without playing
+  sheet("C4 E4 G4")          Export as sheet music (MusicXML)
   help                        Show all commands
   quit                        Exit
 """.format(version=delphi.__version__)
@@ -333,13 +334,16 @@ HELP_TEXT = """
   play("C4 E4 G4")                 Explicit play()
   chord("Am7").arpeggio("up").play()  Arpeggiate a chord
   export("song.mid", "...")        Export to MIDI
+  export("song.xml", "...")        Export to MusicXML (sheet music)
+  sheet("C4 E4 G4")               Export & open as sheet music
 
 \033[1;33m━━ Multi-Track Songs ━━\033[0m
   s = Song("Title", tempo=120)
   s.track("Piano", "| C | Am |", program="piano")
   s.track("Bass", "C2:h G2:h", program="acoustic bass")
   s.play()
-  s.export("song.mid")
+  s.export("song.mid")             Export MIDI
+  s.export("song.xml")             Export MusicXML (sheet music)
   s.render("song.wav")
 
 \033[1;33m━━ Sections & Patterns (large pieces) ━━\033[0m
@@ -469,6 +473,7 @@ HELP_TEXT = """
   lint("C4 E4 G4")          Check notation for issues
   transpose("C4 E4 G4", 2)  Transpose notation by semitones
   loop("C4 E4 G4")          Play in a loop until Ctrl+C
+  sheet("C4 E4 G4")         Export as sheet music & open (MusicXML)
   songs                      Show defined Song objects
   help                       This help text
   quit / exit                Leave the REPL
@@ -522,6 +527,7 @@ def run_repl(project_dir: str | None = None):
     namespace = {
         "play": delphi.play,
         "export": delphi.export,
+        "sheet": delphi.sheet,
         "tempo": delphi.tempo,
         "key": delphi.key,
         "time_sig": delphi.time_sig,

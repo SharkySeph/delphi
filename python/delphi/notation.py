@@ -171,7 +171,7 @@ DYNAMICS_MAP = {
 class Event:
     """A parsed musical event."""
     __slots__ = ("kind", "midi_notes", "velocity", "tick", "duration_ticks",
-                 "articulation", "ornament")
+                 "articulation", "ornament", "_tie_start", "_tie_stop")
 
     def __init__(self, kind: str, midi_notes: list[int], velocity: int,
                  tick: int, duration_ticks: int,
@@ -184,6 +184,8 @@ class Event:
         self.duration_ticks = duration_ticks
         self.articulation = articulation
         self.ornament = ornament
+        self._tie_start = False
+        self._tie_stop = False
 
     def __repr__(self):
         parts = (f"Event({self.kind}, midi={self.midi_notes}, vel={self.velocity}, "

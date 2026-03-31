@@ -11,7 +11,7 @@ from delphi.notation import parse, events_to_tuples
 
 
 def play(notation: str, stop_flag=None, channel=None, instrument=None,
-         loop: bool = False) -> None:
+         loop: bool = False, visualize: bool = True) -> None:
     """
     Parse and play a notation string.
 
@@ -25,6 +25,7 @@ def play(notation: str, stop_flag=None, channel=None, instrument=None,
         channel: Override MIDI channel (0-15). Drums auto-route to 9.
         instrument: Override instrument name (e.g. "violin", "flute").
         loop: If True, repeat playback until Ctrl+C or stop_flag.stop().
+        visualize: If True, show a live scrolling display of notes.
     """
     ctx = get_context()
     events = parse(notation, default_velocity=80)
@@ -38,6 +39,15 @@ def play(notation: str, stop_flag=None, channel=None, instrument=None,
             program = GM_INSTRUMENTS[key]
 
     while True:
+        # Start live visualizer if enabled
+        viz_thread = None
+        if visualize and events:
+            try:
+                from delphi.visualizer import visualize as _viz
+                viz_thread = _viz(events, ctx.bpm, stop_flag=stop_flag)
+            except Exception:
+                pass  # visualizer is purely cosmetic
+
         # Try SoundFont first — it handles all GM instruments + drums properly
         from delphi.soundfont import get_soundfont_path
         sf_path = get_soundfont_path()
@@ -63,6 +73,10 @@ def play(notation: str, stop_flag=None, channel=None, instrument=None,
                 print("(nothing to play)")
                 return
             play_notes(tuples, stop_flag=stop_flag)
+
+        # Wait for visualizer to finish
+        if viz_thread is not None:
+            viz_thread.join(timeout=1.0)
 
         if not loop:
             break
