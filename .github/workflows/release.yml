@@ -1,18 +1,7 @@
-# ─────────────────────────────────────────────────────────────
-# Delphi — Cross-platform Release CI/CD
-#
-# Builds wheels for Linux (x86_64, aarch64), macOS (x86_64,
-# arm64), and Windows (x86_64). Publishes to GitHub Releases
-# and optionally PyPI.
-#
-# Triggers on version tags: v0.6.0, v1.0.0, etc.
-# ─────────────────────────────────────────────────────────────
 name: Release
-
 on:
   push:
-    tags:
-      - "v*"
+    tags: ["v*"]
   workflow_dispatch:
     inputs:
       tag:
@@ -22,92 +11,30 @@ on:
 permissions:
   contents: write
 
-env:
-  CARGO_TERM_COLOR: always
-
 jobs:
-  # ── Prerequisite validation ────────────────────────────────
-  preflight:
-    name: Preflight checks
-    runs-on: ubuntu-latest
-    outputs:
-      version: ${{ steps.version.outputs.version }}
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Extract version
-        id: version
-        run: |
-          TAG="${{ github.event.inputs.tag || github.ref_name }}"
-          VERSION="${TAG#v}"
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "Building version: $VERSION"
-
-      - name: Verify version consistency
-        run: |
-          VERSION="${{ steps.version.outputs.version }}"
-          CARGO_VER=$(grep '^version' Cargo.toml | head -1 | sed 's/.*"\(.*\)".*/\1/')
-          PYPROJECT_VER=$(grep '^version' pyproject.toml | head -1 | sed 's/.*"\(.*\)".*/\1/')
-          echo "Tag version:       $VERSION"
-          echo "Cargo.toml:        $CARGO_VER"
-          echo "pyproject.toml:    $PYPROJECT_VER"
-          if [[ "$CARGO_VER" != "$VERSION" ]] || [[ "$PYPROJECT_VER" != "$VERSION" ]]; then
-            echo "::error::Version mismatch! Update Cargo.toml and pyproject.toml to match tag."
-            exit 1
-          fi
-
-  # ── Linux builds ───────────────────────────────────────────
-  build-linux:
-    name: Linux (${{ matrix.target }})
-    needs: preflight
-    runs-on: ubuntu-latest
+  # ── Build wheels for each platform ─────────────────────────
+  build:
     strategy:
       fail-fast: false
       matrix:
         include:
-          - target: x86_64
-            rust-target: x86_64-unknown-linux-gnu
-          - target: aarch64
-            rust-target: aarch64-unknown-linux-gnu
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            manylinux: "2_28"
+            artifact: wheel-linux-x86_64
+          - os: macos-14
+            target: aarch64-apple-darwin
+            artifact: wheel-macos-arm64
+          - os: macos-14
+            target: x86_64-apple-darwin
+            artifact: wheel-macos-x86_64
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            artifact: wheel-windows-x86_64
+    runs-on: ${{ matrix.os }}
+    name: Build (${{ matrix.os }} ${{ matrix.target }})
     steps:
       - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Build wheel
-        uses: PyO3/maturin-action@v1
-        with:
-          target: ${{ matrix.rust-target }}
-          manylinux: 2_28
-          args: --release --out dist
-          before-script-linux: |
-            # Install ALSA dev headers inside the manylinux (AlmaLinux 8) container
-            yum install -y alsa-lib-devel pkgconfig || dnf install -y alsa-lib-devel pkgconfig || true
-
-      - name: Upload wheel
-        uses: actions/upload-artifact@v4
-        with:
-          name: wheel-linux-${{ matrix.target }}
-          path: dist/*.whl
-
-  # ── macOS builds ───────────────────────────────────────────
-  build-macos:
-    name: macOS (${{ matrix.target }})
-    needs: preflight
-    runs-on: ${{ matrix.runner }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - target: x86_64-apple-darwin
-            runner: macos-14
-          - target: aarch64-apple-darwin
-            runner: macos-14
-    steps:
-      - uses: actions/checkout@v4
-
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -116,160 +43,50 @@ jobs:
         uses: PyO3/maturin-action@v1
         with:
           target: ${{ matrix.target }}
+          manylinux: ${{ matrix.manylinux || 'auto' }}
           args: --release --out dist
+          before-script-linux: |
+            yum install -y alsa-lib-devel pkgconfig || true
 
-      - name: Upload wheel
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
-          name: wheel-macos-${{ matrix.target }}
-          path: dist/*.whl
-
-  # ── Windows build ──────────────────────────────────────────
-  build-windows:
-    name: Windows (x86_64)
-    needs: preflight
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Build wheel
-        uses: PyO3/maturin-action@v1
-        with:
-          args: --release --out dist
-
-      - name: Upload wheel
-        uses: actions/upload-artifact@v4
-        with:
-          name: wheel-windows-x86_64
+          name: ${{ matrix.artifact }}
           path: dist/*.whl
 
   # ── Source distribution ────────────────────────────────────
-  build-sdist:
-    name: Source distribution
-    needs: preflight
+  sdist:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
-      - name: Build sdist
-        uses: PyO3/maturin-action@v1
+      - uses: PyO3/maturin-action@v1
         with:
           command: sdist
           args: --out dist
-
-      - name: Upload sdist
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
           name: sdist
           path: dist/*.tar.gz
 
-  # ── GitHub Release ─────────────────────────────────────────
+  # ── Create GitHub Release ──────────────────────────────────
   release:
-    name: Create GitHub Release
-    needs: [preflight, build-linux, build-macos, build-windows, build-sdist]
+    needs: [build, sdist]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v4
         with:
           path: artifacts
 
-      - name: Collect release files
+      - name: Collect files
         run: |
           mkdir -p release
           find artifacts -name '*.whl' -exec cp {} release/ \;
           find artifacts -name '*.tar.gz' -exec cp {} release/ \;
           ls -la release/
 
-      - name: Generate release notes
-        id: notes
-        run: |
-          VERSION="${{ needs.preflight.outputs.version }}"
-          cat > release_notes.md << 'EOF'
-          ## Delphi v${{ needs.preflight.outputs.version }}
-
-          ### Installation
-
-          **pip (recommended):**
-          ```bash
-          pip install delphi==${{ needs.preflight.outputs.version }}
-          ```
-
-          **From source (Linux):**
-          ```bash
-          curl -sSf https://raw.githubusercontent.com/SharkySeph/delphi/main/deploy/install-linux.sh | bash
-          ```
-
-          **From source (macOS):**
-          ```bash
-          curl -sSf https://raw.githubusercontent.com/SharkySeph/delphi/main/deploy/install-macos.sh | bash
-          ```
-
-          **From source (Windows PowerShell):**
-          ```powershell
-          irm https://raw.githubusercontent.com/SharkySeph/delphi/main/deploy/install-windows.ps1 | iex
-          ```
-
-          ### Wheels
-
-          | Platform | Architecture | File |
-          |----------|-------------|------|
-          EOF
-
-          for whl in release/*.whl; do
-            fname=$(basename "$whl")
-            if [[ "$fname" == *linux*x86_64* ]]; then
-              echo "| Linux | x86_64 | \`$fname\` |" >> release_notes.md
-            elif [[ "$fname" == *linux*aarch64* ]]; then
-              echo "| Linux | aarch64 | \`$fname\` |" >> release_notes.md
-            elif [[ "$fname" == *macosx*x86_64* ]]; then
-              echo "| macOS | x86_64 (Intel) | \`$fname\` |" >> release_notes.md
-            elif [[ "$fname" == *macosx*arm64* ]]; then
-              echo "| macOS | arm64 (Apple Silicon) | \`$fname\` |" >> release_notes.md
-            elif [[ "$fname" == *win* ]]; then
-              echo "| Windows | x86_64 | \`$fname\` |" >> release_notes.md
-            fi
-          done
-
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.event.inputs.tag || github.ref_name }}
-          name: Delphi v${{ needs.preflight.outputs.version }}
-          body_path: release_notes.md
+          name: Delphi ${{ github.event.inputs.tag || github.ref_name }}
+          generate_release_notes: true
           files: release/*
-          draft: false
-          prerelease: ${{ contains(needs.preflight.outputs.version, 'alpha') || contains(needs.preflight.outputs.version, 'beta') || contains(needs.preflight.outputs.version, 'rc') }}
-
-  # ── PyPI Publish (optional, requires PYPI_API_TOKEN secret) ─
-  publish-pypi:
-    name: Publish to PyPI
-    needs: [release]
-    runs-on: ubuntu-latest
-    if: ${{ !contains(needs.preflight.outputs.version, 'alpha') }}
-    environment:
-      name: pypi
-      url: https://pypi.org/project/delphi/
-    steps:
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: artifacts
-
-      - name: Collect dist files
-        run: |
-          mkdir -p dist
-          find artifacts -name '*.whl' -exec cp {} dist/ \;
-          find artifacts -name '*.tar.gz' -exec cp {} dist/ \;
-
-      - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          password: ${{ secrets.PYPI_API_TOKEN }}
-          skip-existing: true
