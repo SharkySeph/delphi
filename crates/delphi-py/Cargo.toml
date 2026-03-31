@@ -11,4 +11,4 @@ crate-type = ["cdylib"]
 delphi-core = { workspace = true }
 delphi-midi = { workspace = true }
 delphi-engine = { workspace = true }
-pyo3 = { version = "0.28", features = ["extension-module"] }
+pyo3 = { version = "0.28", features = ["extension-module", "abi3-py310"] }

@@ -47,40 +47,32 @@ if [[ ! -d "$DELPHI_VENV" ]]; then
 fi
 source "$DELPHI_VENV/bin/activate"
 
-# ── Install Delphi ───────────────────────────────────────────
-VERSION_SPEC=""
-[[ -n "$DELPHI_VERSION" ]] && VERSION_SPEC="==$DELPHI_VERSION"
-
+# ── Install Delphi from GitHub Releases ──────────────────────
+# Note: "delphi" on PyPI is a different package — always use GitHub Releases
 echo "⚙  Installing Delphi..."
-if pip install --quiet "delphi${VERSION_SPEC}" 2>/dev/null; then
-    echo "✔  Installed from PyPI"
-else
-    # Fall back to GitHub Releases
-    if [[ -z "$DELPHI_VERSION" ]]; then
-        DELPHI_VERSION="$(curl -sSf "https://api.github.com/repos/${GITHUB_REPO}/releases/latest" \
-            | $PYTHON -c 'import sys,json; print(json.load(sys.stdin)["tag_name"].lstrip("v"))' 2>/dev/null)" || {
-            echo "Error: Could not find a release. Set DELPHI_VERSION=0.6.0" >&2; exit 1
-        }
-    fi
-    # Map macOS arch names to wheel naming
-    ARCH="$(uname -m)"
-    [[ "$ARCH" == "arm64" ]] && WHL_ARCH="arm64" || WHL_ARCH="x86_64"
-    WHEEL_URL="$(curl -sSf "https://api.github.com/repos/${GITHUB_REPO}/releases/tags/v${DELPHI_VERSION}" \
-        | $PYTHON -c "
+if [[ -z "$DELPHI_VERSION" ]]; then
+    DELPHI_VERSION="$(curl -sSf "https://api.github.com/repos/${GITHUB_REPO}/releases/latest" \
+        | $PYTHON -c 'import sys,json; print(json.load(sys.stdin)["tag_name"].lstrip("v"))' 2>/dev/null)" || {
+        echo "Error: Could not find a release. Set DELPHI_VERSION=0.6.0" >&2; exit 1
+    }
+fi
+ARCH="$(uname -m)"
+[[ "$ARCH" == "arm64" ]] && WHL_ARCH="arm64" || WHL_ARCH="x86_64"
+WHEEL_URL="$(curl -sSf "https://api.github.com/repos/${GITHUB_REPO}/releases/tags/v${DELPHI_VERSION}" \
+    | $PYTHON -c "
 import sys, json
 for a in json.load(sys.stdin).get('assets', []):
     if a['name'].endswith('.whl') and 'macosx' in a['name'] and '${WHL_ARCH}' in a['name']:
         print(a['browser_download_url']); break
 " 2>/dev/null)" || true
 
-    if [[ -n "$WHEEL_URL" ]]; then
-        pip install --quiet "$WHEEL_URL"
-        echo "✔  Installed from GitHub Releases"
-    else
-        echo "Error: No wheel found for macOS ${ARCH}." >&2
-        echo "  https://github.com/${GITHUB_REPO}/releases" >&2
-        exit 1
-    fi
+if [[ -n "$WHEEL_URL" ]]; then
+    pip install --quiet "$WHEEL_URL"
+    echo "✔  Installed Delphi ${DELPHI_VERSION}"
+else
+    echo "Error: No wheel found for macOS ${ARCH}." >&2
+    echo "  https://github.com/${GITHUB_REPO}/releases" >&2
+    exit 1
 fi
 
 # ── Create launcher on PATH ─────────────────────────────────

@@ -42,48 +42,34 @@ if (-not (Test-Path $DelphiVenv)) {
 $pip = Join-Path $DelphiVenv "Scripts\pip.exe"
 $delphiBin = Join-Path $DelphiVenv "Scripts\delphi.exe"
 
-# ── Install Delphi ───────────────────────────────────────────
-$spec = "delphi"
-if ($Version) { $spec = "delphi==$Version" }
-
+# ── Install Delphi from GitHub Releases ──────────────────────
+# Note: "delphi" on PyPI is a different package — always use GitHub Releases
 Write-Host "[*] Installing Delphi..."
-$installed = $false
+if (-not $Version) {
+    try {
+        $rel = Invoke-RestMethod "https://api.github.com/repos/$GithubRepo/releases/latest"
+        $Version = $rel.tag_name.TrimStart("v")
+    } catch {
+        Write-Host "Error: Could not find a release. Set DELPHI_VERSION=0.6.0" -ForegroundColor Red; exit 1
+    }
+}
+$wheelUrl = $null
 try {
-    & $pip install --quiet $spec 2>$null
-    if ($LASTEXITCODE -eq 0) {
-        Write-Host "[+] Installed from PyPI" -ForegroundColor Green
-        $installed = $true
+    $rel = Invoke-RestMethod "https://api.github.com/repos/$GithubRepo/releases/tags/v$Version"
+    foreach ($asset in $rel.assets) {
+        if ($asset.name -match '\.whl$' -and $asset.name -match 'win') {
+            $wheelUrl = $asset.browser_download_url; break
+        }
     }
 } catch {}
 
-if (-not $installed) {
-    # Fall back to GitHub Releases
-    if (-not $Version) {
-        try {
-            $rel = Invoke-RestMethod "https://api.github.com/repos/$GithubRepo/releases/latest"
-            $Version = $rel.tag_name.TrimStart("v")
-        } catch {
-            Write-Host "Error: Could not find a release. Set DELPHI_VERSION=0.6.0" -ForegroundColor Red; exit 1
-        }
-    }
-    $wheelUrl = $null
-    try {
-        $rel = Invoke-RestMethod "https://api.github.com/repos/$GithubRepo/releases/tags/v$Version"
-        foreach ($asset in $rel.assets) {
-            if ($asset.name -match '\.whl$' -and $asset.name -match 'win') {
-                $wheelUrl = $asset.browser_download_url; break
-            }
-        }
-    } catch {}
-
-    if ($wheelUrl) {
-        & $pip install --quiet $wheelUrl
-        Write-Host "[+] Installed from GitHub Releases" -ForegroundColor Green
-    } else {
-        Write-Host "Error: No wheel found for Windows." -ForegroundColor Red
-        Write-Host "  https://github.com/$GithubRepo/releases"
-        exit 1
-    }
+if ($wheelUrl) {
+    & $pip install --quiet $wheelUrl
+    Write-Host "[+] Installed Delphi $Version" -ForegroundColor Green
+} else {
+    Write-Host "Error: No wheel found for Windows." -ForegroundColor Red
+    Write-Host "  https://github.com/$GithubRepo/releases"
+    exit 1
 }
 
 # ── Create launcher on PATH ─────────────────────────────────

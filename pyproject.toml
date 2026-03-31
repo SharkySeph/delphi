@@ -21,7 +21,7 @@ delphi = "delphi.cli:main"
 [tool.maturin]
 python-source = "python"
 module-name = "delphi._engine"
-features = ["pyo3/extension-module"]
+features = ["pyo3/extension-module", "pyo3/abi3-py310"]
 manifest-path = "crates/delphi-py/Cargo.toml"
 
 [tool.pytest.ini_options]
