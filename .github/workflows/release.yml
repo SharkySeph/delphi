@@ -62,15 +62,11 @@ jobs:
     needs: preflight
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         target: [x86_64, aarch64]
     steps:
       - uses: actions/checkout@v4
-
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libasound2-dev pkg-config patchelf
 
       - uses: actions/setup-python@v5
         with:
@@ -83,8 +79,22 @@ jobs:
           manylinux: auto
           args: --release --out dist
           before-script-linux: |
+            # Install ALSA dev headers inside the manylinux container
+            if command -v yum &>/dev/null; then
+              yum install -y alsa-lib-devel pkg-config
+            elif command -v dnf &>/dev/null; then
+              dnf install -y alsa-lib-devel pkg-config
+            elif command -v apk &>/dev/null; then
+              apk add alsa-lib-dev pkgconf
+            elif command -v apt-get &>/dev/null; then
+              apt-get update && apt-get install -y libasound2-dev pkg-config
+            fi
             if [[ "${{ matrix.target }}" == "aarch64" ]]; then
-              sudo apt-get install -y gcc-aarch64-linux-gnu
+              if command -v yum &>/dev/null; then
+                yum install -y gcc-aarch64-linux-gnu
+              elif command -v apt-get &>/dev/null; then
+                apt-get install -y gcc-aarch64-linux-gnu
+              fi
             fi
 
       - name: Upload wheel
@@ -99,10 +109,11 @@ jobs:
     needs: preflight
     runs-on: ${{ matrix.runner }}
     strategy:
+      fail-fast: false
       matrix:
         include:
           - target: x86_64-apple-darwin
-            runner: macos-13
+            runner: macos-14
           - target: aarch64-apple-darwin
             runner: macos-14
     steps:
