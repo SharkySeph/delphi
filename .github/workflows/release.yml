@@ -64,7 +64,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        target: [x86_64, aarch64]
+        include:
+          - target: x86_64
+            rust-target: x86_64-unknown-linux-gnu
+          - target: aarch64
+            rust-target: aarch64-unknown-linux-gnu
     steps:
       - uses: actions/checkout@v4
 
@@ -75,27 +79,12 @@ jobs:
       - name: Build wheel
         uses: PyO3/maturin-action@v1
         with:
-          target: ${{ matrix.target == 'aarch64' && 'aarch64-unknown-linux-gnu' || '' }}
-          manylinux: auto
+          target: ${{ matrix.rust-target }}
+          manylinux: 2_28
           args: --release --out dist
           before-script-linux: |
-            # Install ALSA dev headers inside the manylinux container
-            if command -v yum &>/dev/null; then
-              yum install -y alsa-lib-devel pkg-config
-            elif command -v dnf &>/dev/null; then
-              dnf install -y alsa-lib-devel pkg-config
-            elif command -v apk &>/dev/null; then
-              apk add alsa-lib-dev pkgconf
-            elif command -v apt-get &>/dev/null; then
-              apt-get update && apt-get install -y libasound2-dev pkg-config
-            fi
-            if [[ "${{ matrix.target }}" == "aarch64" ]]; then
-              if command -v yum &>/dev/null; then
-                yum install -y gcc-aarch64-linux-gnu
-              elif command -v apt-get &>/dev/null; then
-                apt-get install -y gcc-aarch64-linux-gnu
-              fi
-            fi
+            # Install ALSA dev headers inside the manylinux (AlmaLinux 8) container
+            yum install -y alsa-lib-devel pkgconfig || dnf install -y alsa-lib-devel pkgconfig || true
 
       - name: Upload wheel
         uses: actions/upload-artifact@v4
