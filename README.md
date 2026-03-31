@@ -13,7 +13,12 @@ key("C major")
 # Play a melody
 play("C4:q E4:q G4:q C5:h")
 
+# Switch to violin and play
+instrument("violin")
+play("G4:q A4:q B4:q D5:h")
+
 # Play a chord progression
+instrument("piano")
 play("| Cmaj7 | Am7 | Fmaj7 | G7 |")
 
 # Build a full song
@@ -31,6 +36,8 @@ song.export("my_song.mid")
 - **Multi-track songs** — Layer instruments with per-track effects (gain, pan, reverb, delay, ADSR)
 - **Composition tools** — Patterns, Voices, Sections, Arrangements with rehearsal marks
 - **Interactive REPL** — Syntax highlighting, auto-complete, inline playback
+- **Delphi Studio** — Terminal notebook IDE for composing multi-track songs (think Jupyter meets a DAW)
+- **128 GM instruments** — Switch with `instrument("violin")` and hear it instantly
 - **SoundFont synthesis** — Realistic instrument sounds via GeneralUser GS (auto-downloaded)
 - **MIDI & WAV export** — Standard MIDI files and rendered audio
 - **128 GM instruments** — Piano, strings, brass, woodwinds, drums, synths, and more
@@ -136,12 +143,43 @@ Or open the project in the REPL (loads settings from `delphi.toml`):
 | Command | Description |
 |---------|-------------|
 | `./delphi` | Launch REPL (auto-detects project in cwd) |
+| `./delphi studio` | Open Delphi Studio (terminal notebook IDE) |
+| `./delphi studio <name>` | Open a project or `.dstudio` file in Studio |
 | `./delphi init <name>` | Create a new Delphi project |
 | `./delphi open [path]` | Open a project directory in the REPL |
 | `./delphi run <file>` | Run a `.delphi` script |
 | `./delphi <file>` | Run a script (shorthand) |
 | `./delphi --version` | Show version |
 | `./delphi --help` | Show help |
+
+### Switching instruments
+
+By default, `play()` uses piano. Switch to any of the 128 GM instruments:
+
+```
+𝄞 instrument("violin")
+𝄞 C4:q E4:q G4:q C5:h
+  ♪ Playing...
+
+𝄞 instrument("flute")
+𝄞 G5:8 A5:8 B5:8 D6:q
+  ♪ Playing...
+
+𝄞 instrument("piano")     # switch back
+𝄞 instruments              # list all 128 GM instruments
+```
+
+This works in scripts too:
+
+```python
+from delphi import *
+
+instrument("trumpet")
+play("C4:q E4:q G4:q C5:h")
+
+instrument("acoustic guitar nylon")
+play("| Am | Em | F | G |")
+```
 
 ### Your first script
 
@@ -162,6 +200,64 @@ Run it:
 
 ```bash
 ./delphi hello.delphi
+```
+
+### Delphi Studio
+
+A terminal notebook IDE for composing multi-track songs — think Jupyter meets a DAW.
+
+```bash
+./delphi studio                    # New empty notebook
+./delphi studio my-song            # Open project as notebook
+./delphi studio song.dstudio       # Open saved notebook file
+```
+
+```
+┌─────────────────────────────────────────────────────┐
+│  🎵 Delphi Studio — my-song          ♩=120  C major │
+├─────────────────────────────────────────────────────┤
+│ ▶ ▾ [1] ⌨ Setup                                     │
+│   tempo(120)                                        │
+│   key("C major")                                    │
+│   ♪ OK                                               │
+│ ──────────────────────────────────────────────────── │
+│   ▾ [2] ♪ Melody (piano)                             │
+│   # @track melody @program piano                    │
+│   C4:q E4:q G4:q C5:h                              │
+│   ♪ 4 notes, 2.0 bars [piano]                       │
+│ ──────────────────────────────────────────────────── │
+│   ▾ [3] ♪ Bass (acoustic bass)                       │
+│   # @track bass @program acoustic bass              │
+│   C2:h G2:h  F2:h C2:h                             │
+│   ♪ 4 notes, 2.0 bars [acoustic bass]               │
+├─────────────────────────────────────────────────────┤
+│ F1:Help  F5:Run  F6:RunAll  F7:Add  F8:Del          │
+│ F9:Export  F10:Save  Ctrl+P:Replay  Ctrl+Q:Quit     │
+└─────────────────────────────────────────────────────┘
+```
+
+| Key | Action |
+|-----|--------|
+| F5 | Run current cell |
+| F6 | Run all cells (builds Song, plays multi-track) |
+| F7 / Ctrl+B | Insert cell below |
+| F8 | Delete cell (with confirmation) |
+| F9 | Export MIDI + WAV + .delphi script |
+| F10 / Ctrl+S | Save .dstudio notebook |
+| Ctrl+↑/↓ | Navigate between cells |
+| Ctrl+Shift+↑/↓ | Reorder cells |
+| Ctrl+T | Cycle cell type (code → notation → markdown) |
+| Ctrl+E | Collapse/expand cell |
+| Ctrl+P | Replay last cell |
+| Ctrl+C | Stop playback |
+| Ctrl+Q | Quit |
+
+Notation cells use `# @pragma` comments to assign instruments:
+
+```
+# @track melody @program violin @velocity 90
+G4:q A4:q B4:q D5:h
+F#4:q G4:q A4:q B4:h
 ```
 
 ## Documentation
@@ -281,6 +377,7 @@ delphi/
 │   ├── export.py         # MIDI/WAV export
 │   ├── soundfont.py      # SoundFont management
 │   ├── repl.py           # Interactive REPL
+│   ├── studio.py         # Delphi Studio TUI notebook IDE
 │   ├── notebook.py       # Jupyter/IPython extension
 │   └── cli.py            # Command-line interface
 ├── crates/               # Rust engine

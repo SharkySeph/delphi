@@ -16,6 +16,7 @@ from delphi.context import (
     time_sig,
     swing,
     humanize,
+    instrument,
     get_context,
     reset_context,
 )
@@ -57,6 +58,7 @@ __all__ = [
     "time_sig",
     "swing",
     "humanize",
+    "instrument",
     "get_context",
     "reset_context",
     "parse_notation",

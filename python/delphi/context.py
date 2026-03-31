@@ -14,6 +14,8 @@ class Context:
     time_sig_den: int = 4
     swing: float = 0.0          # 0.0 = straight, 0.5 = triplet swing, 1.0 = hard swing
     humanize: float = 0.0       # 0.0-1.0 timing/velocity randomization
+    program: int = 0            # GM instrument program number (0 = piano)
+    program_name: str = "piano" # Human-readable instrument name
 
 
 _ctx = Context()
@@ -47,6 +49,27 @@ def swing(amount: float = 0.5) -> None:
 def humanize(amount: float = 0.1) -> None:
     """Add timing/velocity randomization. 0=robotic, 1.0=very loose."""
     _ctx.humanize = max(0.0, min(1.0, float(amount)))
+
+
+def instrument(name: str) -> None:
+    """Set the default instrument for play().
+
+    Accepts any GM instrument name, e.g.:
+        instrument("violin")
+        instrument("flute")
+        instrument("acoustic guitar nylon")
+
+    Use 'instruments' in the REPL to see all 128 names.
+    """
+    from delphi.song import GM_INSTRUMENTS
+    key = name.lower().strip()
+    if key not in GM_INSTRUMENTS:
+        raise ValueError(
+            f"Unknown instrument '{name}'. "
+            f"Use a GM name like 'piano', 'violin', 'flute' or type 'instruments' in the REPL."
+        )
+    _ctx.program = GM_INSTRUMENTS[key]
+    _ctx.program_name = key
 
 
 def get_context() -> Context:

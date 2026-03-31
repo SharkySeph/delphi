@@ -9,11 +9,14 @@ from delphi.notation import parse, events_to_tuples
 
 def play(notation: str) -> None:
     """
-    Parse and play a notation string.
+    Parse and play a notation string using the current instrument.
 
     Examples:
         play("C4 E4 G4")
         play("| Cmaj7 | Am7 | Fmaj7 | G7 |")
+
+    The instrument is set via instrument("violin"), etc.
+    Defaults to piano (program 0).
     """
     ctx = get_context()
     events = parse(notation, default_velocity=80)
@@ -21,6 +24,25 @@ def play(notation: str) -> None:
     if not tuples:
         print("(nothing to play)")
         return
+
+    # If a non-default instrument is set, use SoundFont playback
+    if ctx.program != 0:
+        from delphi.soundfont import get_soundfont_path
+        sf_path = get_soundfont_path()
+        if sf_path:
+            try:
+                from delphi._engine import play_sf
+                sf_tuples = [
+                    (midi, vel, tick, dur, 0, ctx.program)
+                    for midi, vel, tick, dur in tuples
+                ]
+                play_sf(sf_path, sf_tuples, bpm=ctx.bpm)
+                return
+            except ImportError:
+                pass  # Fall through to basic synth
+            except Exception:
+                pass
+
     play_notes(tuples)
 
 

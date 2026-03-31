@@ -118,7 +118,7 @@ _DYNAMICS = ["!ppp", "!pp", "!p", "!mp", "!mf", "!f", "!ff", "!fff",
 
 _FUNCTIONS = [
     'play("', 'export("', 'tempo(', 'key("', 'time_sig(',
-    'swing(', 'humanize(',
+    'swing(', 'humanize(', 'instrument("',
     'chord("', 'note("', 'scale("',
     'Song("', 'Track(', 'Section("', 'Pattern("', 'Voice("',
     'Arrangement("', 'PatternLibrary(',
@@ -146,8 +146,8 @@ class DelphiCompleter(Completer):
 
         wl = word.lower()
 
-        # Inside a string argument for program= → instrument names
-        if 'program="' in text or "program='" in text:
+        # Inside a string argument for program= or instrument() → instrument names
+        if 'program="' in text or "program='" in text or 'instrument("' in text or "instrument('" in text:
             for inst in _INSTRUMENTS:
                 if inst.startswith(wl):
                     yield Completion(inst, start_position=-len(word))
@@ -326,6 +326,7 @@ HELP_TEXT = """
   tempo(120)                Set tempo (BPM)
   key("D major")            Set key
   time_sig(3, 4)            Set time signature
+  instrument("violin")      Set instrument for play() (128 GM instruments)
   swing(0.5)                Set swing feel (0=straight, 0.5=triplet, 1=hard)
   humanize(0.1)             Add timing/velocity randomization
 
@@ -460,6 +461,7 @@ def run_repl(project_dir: str | None = None):
         "time_sig": delphi.time_sig,
         "swing": delphi.swing,
         "humanize": delphi.humanize,
+        "instrument": delphi.instrument,
         "note": delphi.note,
         "chord": delphi.chord,
         "scale": delphi.scale,

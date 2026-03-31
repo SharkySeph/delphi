@@ -202,6 +202,7 @@ class Notebook:
             "time_sig": delphi.time_sig,
             "swing": delphi.swing,
             "humanize": delphi.humanize,
+            "instrument": delphi.instrument,
             "note": delphi.note,
             "chord": delphi.chord,
             "scale": delphi.scale,
