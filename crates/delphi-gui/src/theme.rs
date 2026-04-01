@@ -43,8 +43,8 @@ impl DelphiTheme {
         visuals.extreme_bg_color = self.bg_editor;
 
         // Accent color for selections, active widgets
-        visuals.selection.bg_fill = Color32::from_rgba_premultiplied(86, 182, 194, 60);
-        visuals.selection.stroke.color = self.accent_teal;
+        visuals.selection.bg_fill = Color32::from_rgb(56, 142, 154);
+        visuals.selection.stroke.color = Color32::WHITE;
 
         // Hyperlinks
         visuals.hyperlink_color = self.accent_teal;

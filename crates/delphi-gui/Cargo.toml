@@ -22,6 +22,10 @@ priority = "optional"
 assets = [
     ["target/release/delphi-studio", "usr/bin/", "755"],
     ["../../README.md", "usr/share/doc/delphi-studio/", "644"],
+    ["assets/delphi-studio.desktop", "usr/share/applications/", "644"],
+    ["assets/icon.png", "usr/share/icons/hicolor/256x256/apps/delphi-studio.png", "644"],
+    ["assets/icon-64.png", "usr/share/icons/hicolor/64x64/apps/delphi-studio.png", "644"],
+    ["assets/icon-32.png", "usr/share/icons/hicolor/32x32/apps/delphi-studio.png", "644"],
 ]
 
 [package.metadata.generate-rpm]

@@ -1,0 +1,11 @@
+[Desktop Entry]
+Name=Delphi Studio
+Comment=Music composition and notation studio
+Exec=delphi-studio %F
+Icon=delphi-studio
+Terminal=false
+Type=Application
+Categories=Audio;Music;Sequencer;Midi;
+MimeType=application/x-delphi-studio;
+Keywords=music;composition;midi;notation;soundfont;
+StartupWMClass=delphi-studio
