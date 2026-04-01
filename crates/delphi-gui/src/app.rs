@@ -28,6 +28,7 @@ pub enum BottomPanel {
     Mixer,
     Visualizer,
     Theory,
+    Help,
 }
 
 /// Which panel is visible in the right sidebar.
@@ -129,6 +130,7 @@ impl DelphiApp {
                 }
                 ui.separator();
                 if ui.button("Export…").clicked() {
+                    self.export_dialog.sf_path = self.soundfont_mgr.active_path.clone();
                     self.export_dialog.open = true;
                     ui.close_menu();
                 }
@@ -149,8 +151,13 @@ impl DelphiApp {
             });
 
             ui.menu_button("Transport", |ui| {
-                if ui.button("▶ Play (F5)").clicked() {
+                if ui.button("▶ Play All (F5)").clicked() {
                     self.transport.play(&self.studio, &self.stop_flag, self.soundfont_mgr.active_path.as_ref());
+                    ui.close_menu();
+                }
+                if ui.button("▶ Play Cell (F6)").clicked() {
+                    let idx = self.editor.active_cell;
+                    self.transport.play_cell(&self.studio, idx, &self.stop_flag, self.soundfont_mgr.active_path.as_ref());
                     ui.close_menu();
                 }
                 if ui.button("⏹ Stop (Esc)").clicked() {
@@ -176,6 +183,19 @@ impl DelphiApp {
                     ui.close_menu();
                 }
             });
+
+            ui.menu_button("Help", |ui| {
+                if ui.button("Quick Reference (Ctrl+H)").clicked() {
+                    self.show_bottom = true;
+                    self.bottom_panel = BottomPanel::Help;
+                    ui.close_menu();
+                }
+                ui.separator();
+                if ui.button("About Delphi Studio").clicked() {
+                    // Simple inline about
+                    ui.close_menu();
+                }
+            });
         });
     }
 
@@ -196,17 +216,73 @@ impl eframe::App for DelphiApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         // Keyboard shortcuts
         ctx.input(|i| {
+            // F5: Play
             if i.key_pressed(egui::Key::F5) {
                 self.transport.play(&self.studio, &self.stop_flag, self.soundfont_mgr.active_path.as_ref());
             }
+            // Escape: Stop
             if i.key_pressed(egui::Key::Escape) {
                 self.stop_flag.store(true, Ordering::SeqCst);
             }
+            // F6: Run current cell
+            if i.key_pressed(egui::Key::F6) {
+                let idx = self.editor.active_cell;
+                self.transport.play_cell(&self.studio, idx, &self.stop_flag, self.soundfont_mgr.active_path.as_ref());
+            }
+            // F7: Add cell
+            if i.key_pressed(egui::Key::F7) {
+                self.studio.add_cell();
+                self.editor.active_cell = self.studio.cells.len().saturating_sub(1);
+            }
+            // F8: Delete current cell
+            if i.key_pressed(egui::Key::F8) {
+                let idx = self.editor.active_cell;
+                if idx < self.studio.cells.len() {
+                    self.studio.cells.remove(idx);
+                    if self.editor.active_cell >= self.studio.cells.len() && !self.studio.cells.is_empty() {
+                        self.editor.active_cell = self.studio.cells.len() - 1;
+                    }
+                }
+            }
+            // Ctrl+S: Save
             if i.modifiers.ctrl && i.key_pressed(egui::Key::S) {
                 self.save_project();
             }
+            // Ctrl+E: Export
             if i.modifiers.ctrl && i.key_pressed(egui::Key::E) {
+                self.export_dialog.sf_path = self.soundfont_mgr.active_path.clone();
                 self.export_dialog.open = true;
+            }
+            // Ctrl+Up: Navigate to previous cell
+            if i.modifiers.ctrl && !i.modifiers.shift && i.key_pressed(egui::Key::ArrowUp) {
+                if self.editor.active_cell > 0 {
+                    self.editor.active_cell -= 1;
+                }
+            }
+            // Ctrl+Down: Navigate to next cell
+            if i.modifiers.ctrl && !i.modifiers.shift && i.key_pressed(egui::Key::ArrowDown) {
+                if self.editor.active_cell + 1 < self.studio.cells.len() {
+                    self.editor.active_cell += 1;
+                }
+            }
+            // Ctrl+Shift+Up: Move cell up
+            if i.modifiers.ctrl && i.modifiers.shift && i.key_pressed(egui::Key::ArrowUp) {
+                let idx = self.editor.active_cell;
+                if self.studio.move_cell_up(idx) {
+                    self.editor.active_cell = idx - 1;
+                }
+            }
+            // Ctrl+Shift+Down: Move cell down
+            if i.modifiers.ctrl && i.modifiers.shift && i.key_pressed(egui::Key::ArrowDown) {
+                let idx = self.editor.active_cell;
+                if self.studio.move_cell_down(idx) {
+                    self.editor.active_cell = idx + 1;
+                }
+            }
+            // Ctrl+H: Toggle help panel
+            if i.modifiers.ctrl && i.key_pressed(egui::Key::H) {
+                self.show_bottom = true;
+                self.bottom_panel = BottomPanel::Help;
             }
         });
 
@@ -235,12 +311,14 @@ impl eframe::App for DelphiApp {
                             "Visualizer",
                         );
                         ui.selectable_value(&mut self.bottom_panel, BottomPanel::Theory, "Theory");
+                        ui.selectable_value(&mut self.bottom_panel, BottomPanel::Help, "Help");
                     });
                     ui.separator();
                     match self.bottom_panel {
                         BottomPanel::Mixer => self.mixer.ui(ui, &mut self.studio),
                         BottomPanel::Visualizer => self.visualizer.ui(ui),
                         BottomPanel::Theory => self.theory.ui(ui),
+                        BottomPanel::Help => help_panel_ui(ui),
                     }
                 });
         }
@@ -292,9 +370,86 @@ impl eframe::App for DelphiApp {
         // Export dialog (modal)
         self.export_dialog.modal_ui(ctx, &self.studio);
 
+        // Handle cell run request from editor's ▶ button
+        if let Some(idx) = self.editor.cell_to_run.take() {
+            self.transport.play_cell(&self.studio, idx, &self.stop_flag, self.soundfont_mgr.active_path.as_ref());
+        }
+
         // Request repaint while playing (for visualizer/transport updates)
         if self.transport.is_playing() {
             ctx.request_repaint();
         }
     }
+}
+
+/// Built-in help / quick reference panel.
+fn help_panel_ui(ui: &mut egui::Ui) {
+    egui::ScrollArea::vertical().show(ui, |ui| {
+        ui.heading("Delphi Studio — Quick Reference");
+        ui.separator();
+
+        ui.label(egui::RichText::new("Keyboard Shortcuts").strong());
+        egui::Grid::new("help_shortcuts").striped(true).show(ui, |ui| {
+            let row = |ui: &mut egui::Ui, key: &str, desc: &str| {
+                ui.label(egui::RichText::new(key).monospace().color(egui::Color32::from_rgb(86, 182, 194)));
+                ui.label(desc);
+                ui.end_row();
+            };
+            row(ui, "F5", "Play all cells");
+            row(ui, "Escape", "Stop playback");
+            row(ui, "F6", "Play current cell");
+            row(ui, "F7", "Add new cell");
+            row(ui, "F8", "Delete current cell");
+            row(ui, "Ctrl+S", "Save project");
+            row(ui, "Ctrl+E", "Open export dialog");
+            row(ui, "Ctrl+H", "Toggle this help panel");
+            row(ui, "Ctrl+Up/Down", "Navigate cells");
+            row(ui, "Ctrl+Shift+Up/Down", "Reorder cells");
+        });
+
+        ui.separator();
+        ui.label(egui::RichText::new("Notation Syntax").strong());
+        egui::Grid::new("help_notation").striped(true).show(ui, |ui| {
+            let row = |ui: &mut egui::Ui, syntax: &str, desc: &str| {
+                ui.label(egui::RichText::new(syntax).monospace().color(egui::Color32::from_rgb(229, 192, 123)));
+                ui.label(desc);
+                ui.end_row();
+            };
+            row(ui, "C4 D#5 Bb3", "Notes (pitch + octave)");
+            row(ui, "Cmaj7 Am G7", "Chord symbols");
+            row(ui, ":q :h :w :8 :16", "Duration (quarter, half, whole, 8th, 16th)");
+            row(ui, ":q.  :h.", "Dotted durations");
+            row(ui, ". ~ r", "Rest");
+            row(ui, "|", "Bar line (visual only)");
+            row(ui, "C4,E4,G4", "Polyphony (simultaneous notes)");
+            row(ui, "!p !mf !ff", "Dynamics (pp, p, mp, mf, f, ff, fff)");
+            row(ui, "kick snare hihat", "Drum names (channel 10)");
+            row(ui, "kick(3,8)", "Euclidean rhythm (hits, steps)");
+            row(ui, "@instrument piano", "Pragma (cell metadata)");
+            row(ui, "// comment", "Comment line");
+        });
+
+        ui.separator();
+        ui.label(egui::RichText::new("Cell Types").strong());
+        ui.label("• Code / Notation — parsed and played");
+        ui.label("• Markdown — documentation, not played");
+
+        ui.separator();
+        ui.label(egui::RichText::new("Export Formats").strong());
+        ui.label("• MIDI (.mid) — Standard MIDI File, Format 1");
+        ui.label("• WAV (.wav) — Audio render via SoundFont (requires SF2 loaded)");
+        ui.label("• MusicXML (.xml) — Coming soon");
+
+        ui.separator();
+        ui.label(egui::RichText::new("GM Instruments").strong());
+        ui.label("Set via track sidebar or @instrument pragma:");
+        ui.label(
+            egui::RichText::new(
+                "piano, electric piano, organ, violin, cello, strings, trumpet, flute, \
+                 bass, acoustic guitar, electric guitar, sax, choir, drums …"
+            )
+            .small()
+            .color(egui::Color32::from_rgb(150, 150, 150)),
+        );
+    });
 }

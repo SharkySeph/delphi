@@ -1,4 +1,4 @@
-use delphi_core::{ChordQuality, Note, Scale, ScaleType};
+use delphi_core::{Note, Scale, ScaleType};
 use egui::Color32;
 
 /// Interactive music theory explorer panel.
@@ -67,12 +67,44 @@ impl TheoryPanel {
                 });
         });
 
+        let mut highlighted: Vec<u8> = Vec::new();
+
         if ui.button("Show Chord").clicked() {
-            self.result_text = format!(
-                "{} {} — intervals from delphi-core ChordQuality",
-                self.root_note, self.chord_quality
-            );
-            // TODO: use delphi_core::Chord to compute actual notes
+            // Build chord symbol: e.g. "Cmaj7" from root "C4" + quality "Major7"
+            let root_name = self.root_note.trim_end_matches(|c: char| c.is_ascii_digit() || c == '-');
+            let suffix = match self.chord_quality.as_str() {
+                "Major" => "",
+                "Minor" => "m",
+                "Diminished" => "dim",
+                "Augmented" => "aug",
+                "Major7" => "maj7",
+                "Minor7" => "m7",
+                "Dominant7" => "7",
+                "Diminished7" => "dim7",
+                "Sus2" => "sus2",
+                "Sus4" => "sus4",
+                "Add9" => "add9",
+                "Power" => "5",
+                _ => "",
+            };
+            let symbol = format!("{}{}", root_name, suffix);
+            match symbol.parse::<delphi_core::Chord>() {
+                Ok(chord) => {
+                    let notes = chord.notes();
+                    let note_names: Vec<String> = notes.iter().map(|n| format!("{}", n)).collect();
+                    let midi_notes: Vec<u8> = chord.to_midi();
+                    self.result_text = format!(
+                        "{} → {} [MIDI: {:?}]",
+                        symbol,
+                        note_names.join(", "),
+                        midi_notes
+                    );
+                    highlighted = midi_notes;
+                }
+                Err(_) => {
+                    self.result_text = format!("Could not parse chord: {}", symbol);
+                }
+            }
         }
 
         if !self.result_text.is_empty() {
@@ -84,9 +116,20 @@ impl TheoryPanel {
             );
         }
 
+        // Recompute highlighted from result_text if we didn't just click
+        if highlighted.is_empty() && !self.result_text.is_empty() {
+            // Try to re-parse from the result text
+            if let Some(arrow) = self.result_text.find('→') {
+                let prefix = self.result_text[..arrow].trim();
+                if let Ok(chord) = prefix.parse::<delphi_core::Chord>() {
+                    highlighted = chord.to_midi();
+                }
+            }
+        }
+
         // Piano keyboard visualization
         ui.separator();
-        self.draw_keyboard(ui, &[]);
+        self.draw_keyboard(ui, &highlighted);
     }
 
     fn scales_ui(&mut self, ui: &mut egui::Ui) {
@@ -111,12 +154,42 @@ impl TheoryPanel {
                 });
         });
 
+        let mut highlighted: Vec<u8> = Vec::new();
+
         if ui.button("Show Scale").clicked() {
-            self.result_text = format!(
-                "{} {} — scale degrees from delphi-core ScaleType",
-                self.root_note, self.scale_type
-            );
-            // TODO: use delphi_core::Scale to compute actual notes
+            let st = match self.scale_type.as_str() {
+                "Major" => Some(ScaleType::Major),
+                "Natural Minor" => Some(ScaleType::NaturalMinor),
+                "Harmonic Minor" => Some(ScaleType::HarmonicMinor),
+                "Melodic Minor" => Some(ScaleType::MelodicMinor),
+                "Dorian" => Some(ScaleType::Dorian),
+                "Phrygian" => Some(ScaleType::Phrygian),
+                "Lydian" => Some(ScaleType::Lydian),
+                "Mixolydian" => Some(ScaleType::Mixolydian),
+                "Major Pentatonic" => Some(ScaleType::MajorPentatonic),
+                "Minor Pentatonic" => Some(ScaleType::MinorPentatonic),
+                "Blues" => Some(ScaleType::Blues),
+                "Whole Tone" => Some(ScaleType::WholeTone),
+                "Chromatic" => Some(ScaleType::Chromatic),
+                _ => None,
+            };
+
+            if let Ok(root) = self.root_note.parse::<Note>() {
+                if let Some(scale_type) = st {
+                    let scale = Scale::new(root, scale_type);
+                    let notes = scale.notes();
+                    let note_names: Vec<String> = notes.iter().map(|n| format!("{}", n)).collect();
+                    let midi_notes: Vec<u8> = notes.iter().map(|n| n.to_midi()).collect();
+                    self.result_text = format!(
+                        "{} {} → {}",
+                        self.root_note, self.scale_type,
+                        note_names.join(", ")
+                    );
+                    highlighted = midi_notes;
+                }
+            } else {
+                self.result_text = format!("Could not parse root note: {}", self.root_note);
+            }
         }
 
         if !self.result_text.is_empty() {
@@ -129,7 +202,7 @@ impl TheoryPanel {
         }
 
         ui.separator();
-        self.draw_keyboard(ui, &[]);
+        self.draw_keyboard(ui, &highlighted);
     }
 
     fn intervals_ui(&mut self, ui: &mut egui::Ui) {

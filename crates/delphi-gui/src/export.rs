@@ -1,5 +1,9 @@
 use std::path::PathBuf;
 
+use delphi_core::duration::TimeSignature;
+use delphi_engine::soundfont::render_to_wav;
+use delphi_midi::export::{MidiExporter, MidiTrack};
+
 use crate::studio::StudioState;
 
 /// Export format options.
@@ -16,6 +20,8 @@ pub struct ExportDialog {
     pub format: ExportFormat,
     pub path: String,
     pub status: String,
+    /// SoundFont path for WAV rendering.
+    pub sf_path: Option<PathBuf>,
 }
 
 impl ExportDialog {
@@ -25,6 +31,7 @@ impl ExportDialog {
             format: ExportFormat::Midi,
             path: String::new(),
             status: String::new(),
+            sf_path: None,
         }
     }
 
@@ -141,19 +148,66 @@ impl ExportDialog {
         }
 
         let path = PathBuf::from(&self.path);
+        let events = studio.collect_events(None);
+
+        if events.is_empty() {
+            self.status = "Error: no events to export (cells are empty)".into();
+            return;
+        }
 
         match self.format {
             ExportFormat::Midi => {
-                // TODO: collect events from studio, use delphi_midi::MidiExporter
-                self.status = format!("Exported MIDI to {}", path.display());
+                let mut exporter = MidiExporter::new();
+                exporter.set_tempo(studio.tempo());
+                exporter.set_time_signature(TimeSignature {
+                    numerator: studio.settings.time_sig_num,
+                    denominator: studio.settings.time_sig_den,
+                });
+
+                // Group events by channel into tracks
+                let mut channel_events: std::collections::HashMap<u8, Vec<&delphi_engine::SfEvent>> =
+                    std::collections::HashMap::new();
+                for ev in &events {
+                    channel_events.entry(ev.channel).or_default().push(ev);
+                }
+
+                for (ch, evs) in &channel_events {
+                    let program = evs.first().map(|e| e.program).unwrap_or(0);
+                    let track_name = studio
+                        .tracks
+                        .iter()
+                        .find(|t| t.channel == *ch)
+                        .map(|t| t.name.clone())
+                        .unwrap_or_else(|| format!("Channel {}", ch));
+                    let mut track = MidiTrack::new(&track_name, *ch, program);
+                    for ev in evs {
+                        track.add_note(ev.tick, ev.midi_note, ev.velocity, ev.duration_ticks);
+                    }
+                    exporter.add_track(track);
+                }
+
+                match exporter.write_file(path.to_str().unwrap_or("")) {
+                    Ok(()) => self.status = format!("Exported MIDI to {}", path.display()),
+                    Err(e) => self.status = format!("Error: {}", e),
+                }
             }
             ExportFormat::Wav => {
-                // TODO: render audio via delphi_engine::render_to_wav
-                self.status = format!("Exported WAV to {}", path.display());
+                let sf = match &self.sf_path {
+                    Some(p) if p.is_file() => p.clone(),
+                    _ => {
+                        self.status = "Error: no SoundFont loaded — required for WAV export".into();
+                        return;
+                    }
+                };
+                let tempo = studio.tempo();
+                match render_to_wav(&sf, &events, &tempo, &path) {
+                    Ok(()) => self.status = format!("Exported WAV to {}", path.display()),
+                    Err(e) => self.status = format!("Error: {}", e),
+                }
             }
             ExportFormat::MusicXml => {
-                // TODO: build MusicXML from events
-                self.status = format!("Exported MusicXML to {}", path.display());
+                // MusicXML is a stretch goal; provide a helpful message
+                self.status = "MusicXML export is not yet implemented".into();
             }
         }
     }

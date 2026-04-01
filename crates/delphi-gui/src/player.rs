@@ -43,6 +43,27 @@ impl TransportState {
         stop_flag: &Arc<AtomicBool>,
         sf_path: Option<&PathBuf>,
     ) {
+        self.play_events(studio.collect_events(None), studio.tempo(), stop_flag, sf_path);
+    }
+
+    /// Play a single cell by index.
+    pub fn play_cell(
+        &mut self,
+        studio: &StudioState,
+        cell_idx: usize,
+        stop_flag: &Arc<AtomicBool>,
+        sf_path: Option<&PathBuf>,
+    ) {
+        self.play_events(studio.collect_events(Some(cell_idx)), studio.tempo(), stop_flag, sf_path);
+    }
+
+    fn play_events(
+        &mut self,
+        events: Vec<SfEvent>,
+        tempo: Tempo,
+        stop_flag: &Arc<AtomicBool>,
+        sf_path: Option<&PathBuf>,
+    ) {
         if self.playing {
             return;
         }
@@ -64,19 +85,7 @@ impl TransportState {
         self.play_start = Some(Instant::now());
 
         let stop = stop_flag.clone();
-        let tempo = studio.tempo();
         let looping = self.looping;
-
-        // TODO: collect real SfEvents from studio cells.
-        // For now, play a test chord so playback actually produces sound.
-        let events: Vec<SfEvent> = vec![
-            SfEvent { tick: 0,   midi_note: 60, velocity: 80, duration_ticks: 480, channel: 0, program: 0 },
-            SfEvent { tick: 0,   midi_note: 64, velocity: 80, duration_ticks: 480, channel: 0, program: 0 },
-            SfEvent { tick: 0,   midi_note: 67, velocity: 80, duration_ticks: 480, channel: 0, program: 0 },
-            SfEvent { tick: 480, midi_note: 65, velocity: 80, duration_ticks: 480, channel: 0, program: 0 },
-            SfEvent { tick: 480, midi_note: 69, velocity: 80, duration_ticks: 480, channel: 0, program: 0 },
-            SfEvent { tick: 480, midi_note: 72, velocity: 80, duration_ticks: 480, channel: 0, program: 0 },
-        ];
 
         std::thread::spawn(move || {
             if sf.is_file() {

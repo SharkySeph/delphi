@@ -1,4 +1,4 @@
-use egui::{Color32, FontId, Visuals};
+use egui::{Color32, Visuals};
 
 /// Delphi Studio's custom theme — dark with music-inspired accent colors.
 pub struct DelphiTheme {

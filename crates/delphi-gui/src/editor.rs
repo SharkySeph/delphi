@@ -185,11 +185,16 @@ fn classify_word(word: &str) -> TokenKind {
 pub struct EditorState {
     /// The active cell index in the studio (which cell is being edited).
     pub active_cell: usize,
+    /// Cell index to play (set by ▶ button, consumed by app.rs).
+    pub cell_to_run: Option<usize>,
 }
 
 impl EditorState {
     pub fn new() -> Self {
-        Self { active_cell: 0 }
+        Self {
+            active_cell: 0,
+            cell_to_run: None,
+        }
     }
 
     pub fn ui(&mut self, ui: &mut egui::Ui, studio: &mut StudioState) {
@@ -223,6 +228,10 @@ impl EditorState {
         egui::ScrollArea::vertical().show(ui, |ui| {
             let mut to_delete: Option<usize> = None;
             let mut to_run: Option<usize> = None;
+            let mut to_move_up: Option<usize> = None;
+            let mut to_move_down: Option<usize> = None;
+
+            let cell_count_inner = studio.cells.len();
 
             for (idx, cell) in studio.cells.iter_mut().enumerate() {
                 let is_active = idx == self.active_cell;
@@ -250,12 +259,28 @@ impl EditorState {
                             );
                         }
 
+                        // Instrument / channel info
+                        if !cell.instrument.is_empty() && cell.instrument != "piano" {
+                            ui.label(
+                                egui::RichText::new(format!("🎵 {}", cell.instrument))
+                                    .small()
+                                    .color(Color32::from_rgb(150, 150, 180)),
+                            );
+                        }
+
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                             if ui.small_button("🗑").clicked() {
                                 to_delete = Some(idx);
                             }
                             if cell.cell_type != "markdown" && ui.small_button("▶").clicked() {
                                 to_run = Some(idx);
+                            }
+                            // Reorder buttons
+                            if idx + 1 < cell_count_inner && ui.small_button("↓").clicked() {
+                                to_move_down = Some(idx);
+                            }
+                            if idx > 0 && ui.small_button("↑").clicked() {
+                                to_move_up = Some(idx);
                             }
                         });
                     });
@@ -299,8 +324,20 @@ impl EditorState {
                 }
             }
 
-            if let Some(_idx) = to_run {
-                // TODO: Run cell through engine or scripting
+            if let Some(idx) = to_run {
+                self.cell_to_run = Some(idx);
+            }
+
+            if let Some(idx) = to_move_up {
+                if studio.move_cell_up(idx) {
+                    self.active_cell = idx - 1;
+                }
+            }
+
+            if let Some(idx) = to_move_down {
+                if studio.move_cell_down(idx) {
+                    self.active_cell = idx + 1;
+                }
             }
         });
     }
