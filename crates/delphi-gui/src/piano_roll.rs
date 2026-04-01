@@ -64,6 +64,9 @@ impl PianoRoll {
     }
 
     pub fn ui(&mut self, ui: &mut egui::Ui, studio: &mut StudioState) {
+        // Sync notes from studio cells every frame
+        self.sync_from_studio(studio);
+
         // Toolbar
         ui.horizontal(|ui| {
             ui.label("Snap:");
@@ -206,6 +209,30 @@ impl PianoRoll {
             let scroll = ui.input(|i| i.smooth_scroll_delta);
             self.scroll_x = (self.scroll_x - scroll.x / self.zoom_x).max(0.0);
             self.scroll_y = (self.scroll_y - scroll.y / self.zoom_y).clamp(0.0, 115.0);
+        }
+    }
+
+    /// Rebuild the notes list from studio cells via the notation parser.
+    fn sync_from_studio(&mut self, studio: &StudioState) {
+        use crate::studio::{gm_program_from_name, parse_notation_to_events};
+
+        self.notes.clear();
+        for (cell_idx, cell) in studio.cells.iter().enumerate() {
+            if cell.cell_type == "markdown" || cell.source.trim().is_empty() {
+                continue;
+            }
+            let program = gm_program_from_name(&cell.instrument);
+            let events = parse_notation_to_events(&cell.source, cell.channel, program, cell.velocity);
+            for ev in events {
+                self.notes.push(RollNote {
+                    midi_note: ev.midi_note,
+                    start_tick: ev.tick,
+                    duration_ticks: ev.duration_ticks,
+                    velocity: ev.velocity,
+                    track_idx: cell_idx,
+                    selected: false,
+                });
+            }
         }
     }
 }

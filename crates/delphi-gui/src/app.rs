@@ -114,6 +114,28 @@ impl DelphiApp {
                     }
                     ui.close_menu();
                 }
+                ui.menu_button("Open Example", |ui| {
+                    if ui.button("Hello World").clicked() {
+                        self.load_example("Hello World", EXAMPLE_HELLO);
+                        ui.close_menu();
+                    }
+                    if ui.button("Twinkle Twinkle").clicked() {
+                        self.load_example("Twinkle Twinkle", EXAMPLE_TWINKLE);
+                        ui.close_menu();
+                    }
+                    if ui.button("12-Bar Blues").clicked() {
+                        self.load_example("12-Bar Blues", EXAMPLE_BLUES);
+                        ui.close_menu();
+                    }
+                    if ui.button("Canon in D").clicked() {
+                        self.load_example("Canon in D", EXAMPLE_CANON);
+                        ui.close_menu();
+                    }
+                    if ui.button("Studio Showcase").clicked() {
+                        self.load_example_dstudio();
+                        ui.close_menu();
+                    }
+                });
                 if ui.button("Save").clicked() {
                     self.save_project();
                     ui.close_menu();
@@ -210,7 +232,161 @@ impl DelphiApp {
             self.studio.save(&path);
         }
     }
+
+    fn load_example(&mut self, title: &str, notation: &str) {
+        self.studio = StudioState::new();
+        self.studio.settings.title = title.to_string();
+        self.studio.cells.clear();
+        let mut cell = crate::studio::Cell::new_notation();
+        cell.source = notation.to_string();
+        self.studio.cells.push(cell);
+        self.project_path = None;
+    }
+
+    fn load_example_dstudio(&mut self) {
+        self.studio = StudioState::new();
+        let json = EXAMPLE_SHOWCASE;
+        if let Ok(v) = serde_json::from_str::<serde_json::Value>(json) {
+            // Use load_from_python_format logic via a temp file approach
+            // Or parse inline — simpler to just parse the JSON directly
+            self.studio.settings.title = v["title"].as_str().unwrap_or("Showcase").to_string();
+            if let Some(s) = v.get("settings") {
+                self.studio.settings.bpm = s["tempo"].as_f64().unwrap_or(120.0);
+                if let Some(k) = s["key"].as_str() {
+                    self.studio.settings.key_name = k.to_string();
+                }
+            }
+            self.studio.cells.clear();
+            if let Some(cells) = v["cells"].as_array() {
+                for c in cells {
+                    let mut cell = match c["type"].as_str().unwrap_or("notation") {
+                        "markdown" => crate::studio::Cell::new_markdown(),
+                        "code" => crate::studio::Cell::new_code(),
+                        _ => crate::studio::Cell::new_notation(),
+                    };
+                    cell.source = c["source"].as_str().unwrap_or("").to_string();
+                    if let Some(meta) = c.get("meta") {
+                        if let Some(label) = meta["label"].as_str() {
+                            cell.label = label.to_string();
+                        }
+                        if let Some(prog) = meta["program"].as_str() {
+                            cell.instrument = prog.to_string();
+                        }
+                        if let Some(ch) = meta["channel"].as_u64() {
+                            cell.channel = ch as u8;
+                        }
+                    }
+                    // Also parse pragmas from source
+                    for line in cell.source.lines() {
+                        let trimmed: &str = line.trim();
+                        if let Some(rest) = trimmed.strip_prefix("# @instrument ") {
+                            cell.instrument = rest.to_string();
+                        } else if let Some(rest) = trimmed.strip_prefix("# @channel ") {
+                            if let Ok(ch) = rest.parse::<u8>() {
+                                cell.channel = ch;
+                            }
+                        } else if let Some(rest) = trimmed.strip_prefix("# @velocity ") {
+                            if let Ok(v) = rest.parse::<u8>() {
+                                cell.velocity = v;
+                            }
+                        } else if let Some(rest) = trimmed.strip_prefix("# @track ") {
+                            cell.label = rest.to_string();
+                        }
+                    }
+                    self.studio.cells.push(cell);
+                }
+            }
+            // Build tracks from cells
+            for cell in &self.studio.cells {
+                if cell.cell_type == "markdown" || cell.source.trim().is_empty() {
+                    continue;
+                }
+                let name = if cell.label.is_empty() {
+                    cell.instrument.clone()
+                } else {
+                    cell.label.clone()
+                };
+                if name.is_empty() {
+                    continue;
+                }
+                if !self.studio.tracks.iter().any(|t| t.name == name) {
+                    self.studio.tracks.push(crate::studio::TrackState {
+                        name,
+                        instrument: cell.instrument.clone(),
+                        program: crate::studio::gm_program_from_name(&cell.instrument),
+                        channel: cell.channel,
+                        gain: 1.0,
+                        pan: 0.5,
+                        muted: false,
+                        solo: false,
+                    });
+                }
+            }
+        }
+        self.project_path = None;
+    }
 }
+
+/// Built-in example: Hello World
+const EXAMPLE_HELLO: &str = "\
+// Hello Delphi — your first song!
+// @instrument piano
+// @track Melody
+
+C4:q E4:q G4:q C5:q
+| C:q | Am:q | F:q | G:q |
+| C:q | Am:q | F:q | G:q |
+C4:h E4:h G4:w
+";
+
+/// Built-in example: Twinkle Twinkle
+const EXAMPLE_TWINKLE: &str = "\
+// Twinkle, Twinkle, Little Star
+// @instrument piano
+// @track Melody
+// @velocity 90
+
+C4:q C4:q G4:q G4:q  A4:q A4:q G4:h
+F4:q F4:q E4:q E4:q  D4:q D4:q C4:h
+
+G4:q G4:q F4:q F4:q  E4:q E4:q D4:h
+G4:q G4:q F4:q F4:q  E4:q E4:q D4:h
+
+C4:q C4:q G4:q G4:q  A4:q A4:q G4:h
+F4:q F4:q E4:q E4:q  D4:q D4:q C4:h
+";
+
+/// Built-in example: 12-Bar Blues in A
+const EXAMPLE_BLUES: &str = "\
+// 12-Bar Blues in A
+// @instrument piano
+// @track Blues
+
+| A7:w | A7:w | A7:w | A7:w |
+| D7:w | D7:w | A7:w | A7:w |
+| E7:w | D7:w | A7:w | E7:w |
+";
+
+/// Built-in example: Canon in D (simplified notation)
+const EXAMPLE_CANON: &str = "\
+// Pachelbel's Canon in D (Melody)
+// @instrument violin
+// @track Violin 1
+// @velocity 85
+
+F#5:q E5:q  D5:q  C#5:q
+B4:q  A4:q  B4:q  C#5:q
+D5:q  C#5:q B4:q  A4:q
+G4:q  F#4:q G4:q  E4:q
+
+D4:8  F#4:8 A4:8  G4:8  F#4:8 D4:8  F#4:8 E4:8
+D4:8  B3:8  D4:8  A4:8  G4:8  B4:8  A4:8  G4:8
+F#4:8 D4:8  E4:8  C#5:8 D5:8  F#5:8 A5:8  A4:8
+B4:8  G4:8  A4:8  F#4:8 D4:8  D5:8  D5:8  C#5:8
+";
+
+/// Built-in example: Studio Showcase (.dstudio JSON)
+const EXAMPLE_SHOWCASE: &str = include_str!("../../../examples/showcase.dstudio");
 
 impl eframe::App for DelphiApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
@@ -373,6 +549,45 @@ impl eframe::App for DelphiApp {
         // Handle cell run request from editor's ▶ button
         if let Some(idx) = self.editor.cell_to_run.take() {
             self.transport.play_cell(&self.studio, idx, &self.stop_flag, self.soundfont_mgr.active_path.as_ref());
+            self.editor.last_run_cell = Some(idx);
+        }
+
+        // Update visualizer with playback state
+        {
+            let events = self.studio.collect_events_mixed(None, self.mixer.master_gain);
+            let bpm = self.studio.settings.bpm;
+            let playing = self.transport.is_playing();
+            let elapsed = self.transport.elapsed_secs();
+            self.visualizer.update_playback(&events, elapsed, bpm, playing);
+        }
+
+        // Write cell output after running
+        if let Some(idx) = self.editor.last_run_cell.take() {
+            if idx < self.studio.cells.len() {
+                let cell = &self.studio.cells[idx];
+                let (events, warnings) = crate::studio::parse_notation_with_diagnostics(
+                    &cell.source,
+                    cell.channel,
+                    crate::studio::gm_program_from_name(&cell.instrument),
+                    cell.velocity,
+                );
+                let bars = if events.is_empty() {
+                    0.0
+                } else {
+                    let max_tick = events.iter().map(|e| e.tick + e.duration_ticks).max().unwrap_or(0);
+                    max_tick as f64 / (480.0 * 4.0)
+                };
+                let mut output = format!(
+                    "♪ {} notes, {:.1} bars [{}]",
+                    events.len(),
+                    bars,
+                    if cell.instrument.is_empty() { "piano" } else { &cell.instrument },
+                );
+                if !warnings.is_empty() {
+                    output.push_str(&format!("\n⚠ {}", warnings.join("; ")));
+                }
+                self.studio.cells[idx].output = output;
+            }
         }
 
         // Request repaint while playing (for visualizer/transport updates)

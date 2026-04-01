@@ -1,17 +1,26 @@
 use egui::{Color32, Pos2, Rect, Stroke, Vec2};
 
-/// Real-time audio visualizer: waveform display and spectrum analyzer.
+use delphi_engine::SfEvent;
+
+/// Real-time audio visualizer: waveform display and "now playing" event view.
 pub struct Visualizer {
     /// Waveform sample buffer (ring buffer of recent audio samples).
     pub waveform: Vec<f32>,
     /// Spectrum magnitudes (FFT bins).
     pub spectrum: Vec<f32>,
-    /// Toggle between waveform and spectrum view.
+    /// Toggle between views.
     pub mode: VisualizerMode,
+    /// Current events being played (set by app each frame).
+    pub playing_events: Vec<SfEvent>,
+    /// Current playback tick (derived from elapsed time + tempo).
+    pub current_tick: u32,
+    /// Whether playback is active.
+    pub is_playing: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VisualizerMode {
+    NowPlaying,
     Waveform,
     Spectrum,
     Both,
@@ -22,7 +31,10 @@ impl Visualizer {
         Self {
             waveform: vec![0.0; 1024],
             spectrum: vec![0.0; 512],
-            mode: VisualizerMode::Waveform,
+            mode: VisualizerMode::NowPlaying,
+            playing_events: Vec::new(),
+            current_tick: 0,
+            is_playing: false,
         }
     }
 
@@ -38,8 +50,23 @@ impl Visualizer {
         }
     }
 
+    /// Update playback state from the transport.
+    pub fn update_playback(&mut self, events: &[SfEvent], elapsed_secs: f64, bpm: f64, playing: bool) {
+        self.is_playing = playing;
+        if playing {
+            // Convert elapsed time to tick position
+            let ticks_per_beat = 480.0;
+            let beats_per_sec = bpm / 60.0;
+            self.current_tick = (elapsed_secs * beats_per_sec * ticks_per_beat) as u32;
+            self.playing_events = events.to_vec();
+        } else {
+            self.current_tick = 0;
+        }
+    }
+
     pub fn ui(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
+            ui.selectable_value(&mut self.mode, VisualizerMode::NowPlaying, "Now Playing");
             ui.selectable_value(&mut self.mode, VisualizerMode::Waveform, "Waveform");
             ui.selectable_value(&mut self.mode, VisualizerMode::Spectrum, "Spectrum");
             ui.selectable_value(&mut self.mode, VisualizerMode::Both, "Both");
@@ -47,6 +74,7 @@ impl Visualizer {
         ui.separator();
 
         match self.mode {
+            VisualizerMode::NowPlaying => self.draw_now_playing(ui),
             VisualizerMode::Waveform => self.draw_waveform(ui),
             VisualizerMode::Spectrum => self.draw_spectrum(ui),
             VisualizerMode::Both => {
@@ -141,4 +169,98 @@ impl Visualizer {
             painter.rect_filled(bar_rect, 1.0, color);
         }
     }
+
+    /// Draw the "Now Playing" view showing active notes at current tick.
+    fn draw_now_playing(&self, ui: &mut egui::Ui) {
+        if !self.is_playing || self.playing_events.is_empty() {
+            ui.centered_and_justified(|ui| {
+                ui.label(
+                    egui::RichText::new("Press F5 to play — active notes will appear here")
+                        .color(Color32::from_rgb(120, 120, 130)),
+                );
+            });
+            return;
+        }
+
+        let tick = self.current_tick;
+
+        // Find currently active notes
+        let active: Vec<&SfEvent> = self
+            .playing_events
+            .iter()
+            .filter(|e| e.tick <= tick && tick < e.tick + e.duration_ticks)
+            .collect();
+
+        let available = ui.available_size();
+        let (response, painter) = ui.allocate_painter(available, egui::Sense::hover());
+        let rect = response.rect;
+
+        // Background
+        painter.rect_filled(rect, 0.0, Color32::from_rgb(25, 25, 30));
+
+        if active.is_empty() {
+            // Draw a subtle tick counter
+            painter.text(
+                rect.center(),
+                egui::Align2::CENTER_CENTER,
+                format!("tick {}", tick),
+                egui::FontId::monospace(12.0),
+                Color32::from_rgb(80, 80, 90),
+            );
+            return;
+        }
+
+        // Draw active notes as vertical bars (like a MIDI keyboard lit up)
+        // Map MIDI 0-127 to the horizontal axis
+        let bar_width = rect.width() / 128.0;
+        for ev in &active {
+            let x = rect.left() + ev.midi_note as f32 * bar_width;
+            // Height based on velocity
+            let height = rect.height() * (ev.velocity as f32 / 127.0) * 0.9;
+
+            let bar_rect = Rect::from_min_size(
+                Pos2::new(x, rect.bottom() - height),
+                Vec2::new(bar_width.max(3.0), height),
+            );
+
+            let color = match ev.channel {
+                9 => Color32::from_rgb(224, 108, 117), // drums: red
+                0 => Color32::from_rgb(86, 182, 194),  // ch 0: teal
+                1 => Color32::from_rgb(229, 192, 123), // ch 1: gold
+                2 => Color32::from_rgb(152, 195, 121), // ch 2: green
+                3 => Color32::from_rgb(198, 120, 221), // ch 3: purple
+                _ => Color32::from_rgb(97, 175, 239),  // others: blue
+            };
+
+            painter.rect_filled(bar_rect, 2.0, color);
+
+            // Note name label for prominent notes
+            if bar_width > 4.0 || active.len() <= 12 {
+                let note_name = midi_to_name(ev.midi_note);
+                painter.text(
+                    Pos2::new(x + bar_width * 0.5, rect.bottom() - height - 10.0),
+                    egui::Align2::CENTER_BOTTOM,
+                    note_name,
+                    egui::FontId::monospace(9.0),
+                    Color32::from_rgb(200, 200, 200),
+                );
+            }
+        }
+
+        // Active note count
+        painter.text(
+            Pos2::new(rect.left() + 4.0, rect.top() + 4.0),
+            egui::Align2::LEFT_TOP,
+            format!("{} notes  tick {}", active.len(), tick),
+            egui::FontId::monospace(10.0),
+            Color32::from_rgb(150, 150, 160),
+        );
+    }
+}
+
+fn midi_to_name(midi: u8) -> String {
+    let names = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+    let octave = (midi as i8 / 12) - 1;
+    let note = midi % 12;
+    format!("{}{}", names[note as usize], octave)
 }

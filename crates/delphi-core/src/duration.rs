@@ -15,16 +15,24 @@ impl Duration {
     }
 
     // Standard durations
+    pub const DOUBLE_WHOLE: Self = Self::new(Self::TICKS_PER_QUARTER * 8);
     pub const WHOLE: Self = Self::new(Self::TICKS_PER_QUARTER * 4);
     pub const HALF: Self = Self::new(Self::TICKS_PER_QUARTER * 2);
     pub const QUARTER: Self = Self::new(Self::TICKS_PER_QUARTER);
     pub const EIGHTH: Self = Self::new(Self::TICKS_PER_QUARTER / 2);
     pub const SIXTEENTH: Self = Self::new(Self::TICKS_PER_QUARTER / 4);
     pub const THIRTY_SECOND: Self = Self::new(Self::TICKS_PER_QUARTER / 8);
+    pub const SIXTY_FOURTH: Self = Self::new(Self::TICKS_PER_QUARTER / 16);
+    pub const ONE_TWENTY_EIGHTH: Self = Self::new(Self::TICKS_PER_QUARTER / 32);
 
     /// Dotted duration (1.5x).
     pub const fn dotted(self) -> Self {
         Self::new(self.ticks + self.ticks / 2)
+    }
+
+    /// Double-dotted duration (1.75x).
+    pub const fn double_dotted(self) -> Self {
+        Self::new(self.ticks + self.ticks / 2 + self.ticks / 4)
     }
 
     /// Triplet duration (2/3x).
@@ -38,20 +46,37 @@ impl Duration {
         beats * 60.0 / tempo.bpm
     }
 
-    /// Parse a duration suffix like "w", "h", "q", "8", "16", "8.", "q.".
+    /// Parse a duration suffix like "w", "h", "q", "8", "16", "8.", "q.", "8t".
     pub fn from_suffix(s: &str) -> Option<Self> {
         match s {
+            "dw" | "breve" => Some(Self::DOUBLE_WHOLE),
             "w" | "whole" => Some(Self::WHOLE),
             "h" | "half" => Some(Self::HALF),
             "q" | "quarter" => Some(Self::QUARTER),
             "8" | "eighth" => Some(Self::EIGHTH),
             "16" | "sixteenth" => Some(Self::SIXTEENTH),
             "32" => Some(Self::THIRTY_SECOND),
+            "64" => Some(Self::SIXTY_FOURTH),
+            "128" => Some(Self::ONE_TWENTY_EIGHTH),
+            // Dotted
+            "dw." => Some(Self::DOUBLE_WHOLE.dotted()),
             "w." => Some(Self::WHOLE.dotted()),
             "h." => Some(Self::HALF.dotted()),
             "q." => Some(Self::QUARTER.dotted()),
             "8." => Some(Self::EIGHTH.dotted()),
             "16." => Some(Self::SIXTEENTH.dotted()),
+            "32." => Some(Self::THIRTY_SECOND.dotted()),
+            // Double-dotted
+            "w.." => Some(Self::WHOLE.double_dotted()),
+            "h.." => Some(Self::HALF.double_dotted()),
+            "q.." => Some(Self::QUARTER.double_dotted()),
+            "8.." => Some(Self::EIGHTH.double_dotted()),
+            // Triplet
+            "wt" => Some(Self::WHOLE.triplet()),
+            "ht" => Some(Self::HALF.triplet()),
+            "qt" => Some(Self::QUARTER.triplet()),
+            "8t" => Some(Self::EIGHTH.triplet()),
+            "16t" => Some(Self::SIXTEENTH.triplet()),
             _ => None,
         }
     }

@@ -66,6 +66,21 @@ impl Dynamic {
             _ => None,
         }
     }
+
+    /// Parse extended dynamic with velocity (includes sfz, fp, etc.).
+    pub fn velocity_from_str(s: &str) -> Option<u8> {
+        if let Some(d) = Self::from_str_dynamic(s) {
+            return Some(d.velocity());
+        }
+        match s.to_lowercase().as_str() {
+            "sfz" => Some(120),
+            "sfp" => Some(110),
+            "fp" => Some(100),
+            "rfz" => Some(115),
+            "fz" => Some(110),
+            _ => None,
+        }
+    }
 }
 
 impl fmt::Display for Dynamic {

@@ -187,6 +187,13 @@ pub struct EditorState {
     pub active_cell: usize,
     /// Cell index to play (set by ▶ button, consumed by app.rs).
     pub cell_to_run: Option<usize>,
+    /// Cell index that was just run (for output feedback, consumed by app.rs).
+    pub last_run_cell: Option<usize>,
+    /// Autocomplete state
+    pub completion_open: bool,
+    pub completion_items: Vec<&'static str>,
+    pub completion_filter: String,
+    pub completion_selected: usize,
 }
 
 impl EditorState {
@@ -194,6 +201,11 @@ impl EditorState {
         Self {
             active_cell: 0,
             cell_to_run: None,
+            last_run_cell: None,
+            completion_open: false,
+            completion_items: Vec::new(),
+            completion_filter: String::new(),
+            completion_selected: 0,
         }
     }
 
@@ -290,17 +302,77 @@ impl EditorState {
                         let layout_job = highlight_notation(ui, text, wrap_width);
                         ui.fonts(|f| f.layout_job(layout_job))
                     };
-                    if ui
-                        .add(
-                            egui::TextEdit::multiline(&mut cell.source)
-                                .code_editor()
-                                .desired_width(f32::INFINITY)
-                                .desired_rows(4)
-                                .layouter(&mut layouter),
-                        )
-                        .clicked()
-                    {
+                    let editor_response = ui.add(
+                        egui::TextEdit::multiline(&mut cell.source)
+                            .code_editor()
+                            .desired_width(f32::INFINITY)
+                            .desired_rows(4)
+                            .layouter(&mut layouter),
+                    );
+                    if editor_response.clicked() {
                         self.active_cell = idx;
+                    }
+
+                    // Auto-complete: trigger on Ctrl+Space
+                    if is_active && editor_response.has_focus() {
+                        let trigger = ui.input(|i| i.modifiers.ctrl && i.key_pressed(egui::Key::Space));
+                        if trigger {
+                            // Get the last word being typed
+                            let src = &cell.source;
+                            let prefix = src.split(|c: char| c.is_whitespace() || c == '|' || c == '[' || c == ']')
+                                .last()
+                                .unwrap_or("");
+                            self.completion_filter = prefix.to_lowercase();
+                            self.completion_items = get_completions(&self.completion_filter);
+                            self.completion_open = !self.completion_items.is_empty();
+                            self.completion_selected = 0;
+                        }
+
+                        // Show completion popup
+                        if self.completion_open && is_active {
+                            let popup_id = ui.id().with("autocomplete");
+                            egui::popup_below_widget(ui, popup_id, &editor_response, egui::PopupCloseBehavior::CloseOnClick, |ui| {
+                                ui.set_min_width(200.0);
+                                let items = self.completion_items.clone();
+                                let mut chosen: Option<&str> = None;
+                                for (ci, item) in items.iter().enumerate() {
+                                    let selected = ci == self.completion_selected;
+                                    let label = if selected {
+                                        egui::RichText::new(*item).strong().color(Color32::from_rgb(86, 182, 194))
+                                    } else {
+                                        egui::RichText::new(*item)
+                                    };
+                                    if ui.selectable_label(selected, label).clicked() {
+                                        chosen = Some(item);
+                                    }
+                                }
+                                if let Some(item) = chosen {
+                                    // Insert completion
+                                    let filter_len = self.completion_filter.len();
+                                    let src = &mut cell.source;
+                                    // Replace last partial word with completion
+                                    if filter_len > 0 && src.len() >= filter_len {
+                                        src.truncate(src.len() - filter_len);
+                                    }
+                                    src.push_str(item);
+                                    src.push(' ');
+                                    self.completion_open = false;
+                                }
+                            });
+                            // Keep popup alive
+                            ui.memory_mut(|m| m.open_popup(ui.id().with("autocomplete")));
+
+                            // Handle keyboard navigation in popup
+                            let close = ui.input(|i| {
+                                if i.key_pressed(egui::Key::Escape) {
+                                    return true;
+                                }
+                                false
+                            });
+                            if close {
+                                self.completion_open = false;
+                            }
+                        }
                     }
 
                     // Output area
@@ -401,4 +473,56 @@ fn token_color(kind: TokenKind) -> Color32 {
         TokenKind::Keyword => Color32::from_rgb(198, 120, 221),    // Purple
         TokenKind::Plain => Color32::from_rgb(171, 178, 191),      // Light gray
     }
+}
+
+/// Return auto-complete suggestions matching the given prefix.
+fn get_completions(prefix: &str) -> Vec<&'static str> {
+    static ALL_COMPLETIONS: &[&str] = &[
+        // Notes
+        "C4", "C#4", "Db4", "D4", "D#4", "Eb4", "E4", "F4", "F#4", "Gb4",
+        "G4", "G#4", "Ab4", "A4", "A#4", "Bb4", "B4",
+        "C3", "D3", "E3", "F3", "G3", "A3", "B3",
+        "C5", "D5", "E5", "F5", "G5", "A5", "B5",
+        // Chords
+        "Cmaj7", "Dm7", "Em7", "Fmaj7", "G7", "Am7", "Bm7b5",
+        "C", "Cm", "Cdim", "Caug", "C7", "Cmaj7", "Cm7",
+        "D", "Dm", "D7", "Dm7", "Dmaj7",
+        "E", "Em", "E7", "Em7",
+        "F", "Fm", "F7", "Fmaj7",
+        "G", "Gm", "G7", "Gmaj7",
+        "A", "Am", "A7", "Am7", "Amaj7",
+        "B", "Bm", "B7", "Bm7", "Bdim",
+        // Durations
+        ":w", ":h", ":q", ":8", ":16", ":32",
+        ":w.", ":h.", ":q.", ":8.",
+        ":8t", ":qt", ":ht",
+        ":dw",
+        // Dynamics
+        "!ppp", "!pp", "!p", "!mp", "!mf", "!f", "!ff", "!fff", "!sfz",
+        // Articulations
+        ".stac", ".ten", ".acc", ".marc", ".ferm", ".ghost", ".leg", ".pizz", ".mute",
+        // Ornaments
+        ".tr", ".mord", ".lmord", ".turn", ".grace", ".appoggiatura", ".trem", ".gliss", ".arp", ".roll",
+        // Drums
+        "kick", "snare", "hihat", "openhat", "ride", "crash",
+        "clap", "rimshot", "cowbell", "tambourine", "shaker",
+        "tom1", "tom2", "tom3", "woodblock", "triangle",
+        // Rests
+        "r", "rest",
+        // Pragmas
+        "# @instrument ", "# @track ", "# @channel ", "# @velocity ",
+        // Structural
+        "breath", "caesura",
+    ];
+
+    if prefix.is_empty() {
+        return Vec::new();
+    }
+
+    ALL_COMPLETIONS
+        .iter()
+        .filter(|item| item.to_lowercase().starts_with(prefix))
+        .copied()
+        .take(12)
+        .collect()
 }

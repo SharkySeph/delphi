@@ -37,6 +37,14 @@ impl TransportState {
         self.playing
     }
 
+    pub fn elapsed_secs(&self) -> f64 {
+        if let Some(start) = self.play_start {
+            start.elapsed().as_secs_f64()
+        } else {
+            self.elapsed_secs
+        }
+    }
+
     pub fn play(
         &mut self,
         studio: &StudioState,
