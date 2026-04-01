@@ -422,7 +422,7 @@ class Notebook:
             output_parts.append(f"♪ Played {played} line{'s' if played > 1 else ''}")
         return "\n".join(output_parts) if output_parts else "♪ OK"
 
-    def run_all(self) -> list[str]:
+    def run_all(self, play: bool = True) -> list[str]:
         """Run all cells top-to-bottom, building a Song from notation cells."""
         s = self.settings
         tempo_val = float(s.get("tempo", 120))
@@ -485,8 +485,8 @@ class Notebook:
                 cell.output = out
                 outputs.append(out)
 
-        # Play the assembled song
-        if self.song.tracks:
+        # Play the assembled song (unless build-only mode for export)
+        if play and self.song.tracks:
             try:
                 self.song.play(stop_flag=self._stop_flag)
                 outputs.append(f"▶ Song: {track_count} tracks")
@@ -1187,54 +1187,77 @@ class StudioApp:
 
     def _export(self):
         """Export notebook to MIDI, WAV, MusicXML, or .delphi script."""
-        base = self.notebook.file_path or self.notebook.title.lower().replace(" ", "-")
-        base = base.replace(".dstudio", "")
+        if self._playing:
+            self.message = "⏳ Already running — wait or Ctrl+C first"
+            self._refresh_layout()
+            return
 
-        results = []
-
-        # Build Song if not already built
-        if not self.notebook.song or not self.notebook.song.tracks:
-            self.notebook.run_all()
-
-        # Export MIDI + WAV + MusicXML
-        if self.notebook.song and self.notebook.song.tracks:
-            mid_path = base + ".mid"
-            try:
-                self.notebook.song.export(mid_path)
-                results.append(f"MIDI → {mid_path}")
-            except Exception as e:
-                results.append(f"MIDI ✗ {e}")
-
-            # Export WAV (if SoundFont available)
-            wav_path = base + ".wav"
-            try:
-                self.notebook.song.render(wav_path)
-                results.append(f"WAV → {wav_path}")
-            except Exception as e:
-                results.append(f"WAV ✗ {e}")
-
-            # Export MusicXML (sheet music)
-            xml_path = base + ".musicxml"
-            try:
-                self.notebook.song.export(xml_path)
-                results.append(f"Sheet → {xml_path}")
-            except Exception as e:
-                results.append(f"Sheet ✗ {e}")
-        else:
-            results.append("No tracks to export (run F6 first)")
-
-        # Always export script
-        script_path = base + ".delphi"
-        try:
-            script = self.notebook.export_script()
-            with open(script_path, "w") as f:
-                f.write(script)
-            results.append(f"Script → {script_path}")
-        except Exception as e:
-            results.append(f"Script ✗ {e}")
-
-        self.message = "  |  ".join(results)
+        self._playing = True
+        self.message = "⏳ Exporting…"
         self._refresh_layout()
+
+        def _do_export():
+            try:
+                base = self.notebook.file_path or self.notebook.title.lower().replace(" ", "-")
+                base = base.replace(".dstudio", "")
+
+                results = []
+
+                # Build Song without playing it
+                if not self.notebook.song or not self.notebook.song.tracks:
+                    self.notebook.run_all(play=False)
+
+                # Export MIDI + WAV + MusicXML
+                if self.notebook.song and self.notebook.song.tracks:
+                    mid_path = base + ".mid"
+                    try:
+                        self.notebook.song.export(mid_path)
+                        results.append(f"MIDI → {mid_path}")
+                    except Exception as e:
+                        results.append(f"MIDI ✗ {e}")
+
+                    # Export WAV (if SoundFont available)
+                    wav_path = base + ".wav"
+                    try:
+                        self.notebook.song.render(wav_path)
+                        results.append(f"WAV → {wav_path}")
+                    except Exception as e:
+                        results.append(f"WAV ✗ {e}")
+
+                    # Export MusicXML (sheet music)
+                    xml_path = base + ".musicxml"
+                    try:
+                        self.notebook.song.export(xml_path)
+                        results.append(f"Sheet → {xml_path}")
+                    except Exception as e:
+                        results.append(f"Sheet ✗ {e}")
+                else:
+                    results.append("No tracks to export (run F6 first)")
+
+                # Always export script
+                script_path = base + ".delphi"
+                try:
+                    script = self.notebook.export_script()
+                    with open(script_path, "w") as f:
+                        f.write(script)
+                    results.append(f"Script → {script_path}")
+                except Exception as e:
+                    results.append(f"Script ✗ {e}")
+
+                self.message = "  |  ".join(results)
+            except Exception as e:
+                self.message = f"✗ Export failed: {e}"
+            finally:
+                self._playing = False
+                try:
+                    self.app.layout = self._build_layout()
+                    self._focus_current_cell()
+                except Exception:
+                    pass
+                self.app.invalidate()
+
+        self._play_thread = threading.Thread(target=_do_export, daemon=True)
+        self._play_thread.start()
 
     # ── Layout building ───────────────────────────────────────
 
@@ -1362,6 +1385,7 @@ class StudioApp:
         parts.append("F6:RunAll")
         parts.append("F7:Add")
         parts.append("F8:Del")
+        parts.append("F9:Export")
         parts.append("F2:Docs")
         parts.append("Ctrl+L:Preview")
         parts.append("Ctrl+↑↓:Nav")

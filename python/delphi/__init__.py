@@ -51,7 +51,7 @@ def run_studio(target=None):
     from delphi.studio import run_studio as _run
     return _run(target)
 
-__version__ = "0.6.1"
+__version__ = "0.7.0"
 
 __all__ = [
     "tempo",

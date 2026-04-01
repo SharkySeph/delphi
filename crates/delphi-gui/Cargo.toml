@@ -1,0 +1,58 @@
+[package]
+name = "delphi-gui"
+version.workspace = true
+edition.workspace = true
+description = "Delphi Studio — a native GUI for music composition"
+license = "MIT"
+authors = ["SharkySeph"]
+homepage = "https://github.com/SharkySeph/delphi"
+repository = "https://github.com/SharkySeph/delphi"
+
+[[bin]]
+name = "delphi-studio"
+path = "src/main.rs"
+
+[package.metadata.deb]
+name = "delphi-studio"
+maintainer = "SharkySeph"
+copyright = "2026, SharkySeph"
+depends = "libasound2, libgl1, libxkbcommon0"
+section = "sound"
+priority = "optional"
+assets = [
+    ["target/release/delphi-studio", "usr/bin/", "755"],
+    ["../../README.md", "usr/share/doc/delphi-studio/", "644"],
+]
+
+[package.metadata.generate-rpm]
+name = "delphi-studio"
+assets = [
+    { source = "target/release/delphi-studio", dest = "/usr/bin/delphi-studio", mode = "755" },
+    { source = "../../README.md", dest = "/usr/share/doc/delphi-studio/README.md", mode = "644" },
+]
+[package.metadata.generate-rpm.requires]
+alsa-lib = "*"
+
+[dependencies]
+delphi-core = { workspace = true }
+delphi-engine = { workspace = true }
+delphi-midi = { workspace = true }
+
+# GUI
+eframe = "0.29"
+egui = "0.29"
+egui_extras = { version = "0.29", features = ["all_loaders"] }
+image = { version = "0.25", default-features = false, features = ["png"] }
+
+# Scripting
+rhai = "1.19"
+
+# File dialogs
+rfd = "0.15"
+
+# Async / threading
+crossbeam-channel = "0.5"
+
+# Serialization (project files)
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

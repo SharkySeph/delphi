@@ -5,10 +5,11 @@ members = [
     "crates/delphi-midi",
     "crates/delphi-engine",
     "crates/delphi-py",
+    "crates/delphi-gui",
 ]
 
 [workspace.package]
-version = "0.6.1"
+version = "0.7.0"
 edition = "2021"
 license = "MIT"
 

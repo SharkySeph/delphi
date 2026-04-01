@@ -72,6 +72,28 @@ if ($wheelUrl) {
     exit 1
 }
 
+# ── Install native GUI binary ────────────────────────────────
+$guiBinUrl = $null
+try {
+    $rel = Invoke-RestMethod "https://api.github.com/repos/$GithubRepo/releases/tags/v$Version"
+    foreach ($asset in $rel.assets) {
+        if ($asset.name -match 'windows' -and $asset.name -match '\.zip$') {
+            $guiBinUrl = $asset.browser_download_url; break
+        }
+    }
+} catch {}
+
+if ($guiBinUrl) {
+    Write-Host "[*] Installing Delphi Studio (GUI)..."
+    $tmpZip = Join-Path $env:TEMP "delphi-studio.zip"
+    Invoke-WebRequest -Uri $guiBinUrl -OutFile $tmpZip
+    Expand-Archive -Path $tmpZip -DestinationPath $LauncherDir -Force
+    Remove-Item $tmpZip -Force
+    Write-Host "[+] Installed Delphi Studio GUI" -ForegroundColor Green
+} else {
+    Write-Host "[!] No GUI binary found for Windows — CLI/REPL still available" -ForegroundColor Yellow
+}
+
 # ── Create launcher on PATH ─────────────────────────────────
 New-Item -Path $LauncherDir -ItemType Directory -Force | Out-Null
 $launcher = Join-Path $LauncherDir "delphi.cmd"
@@ -92,7 +114,9 @@ New-Item -Path $sfDir -ItemType Directory -Force | Out-Null
 
 # ── Done ─────────────────────────────────────────────────────
 Write-Host ""
-Write-Host "[+] Delphi installed! Run 'delphi' to start." -ForegroundColor Green
+Write-Host "[+] Delphi installed!" -ForegroundColor Green
+Write-Host "    Run 'delphi' for the CLI/REPL"
+Write-Host "    Run 'delphi-studio' for the GUI"
 Write-Host "    Venv:       $DelphiVenv"
 Write-Host "    SoundFonts: $sfDir"
 Write-Host "    Projects:   $dataDir\projects"

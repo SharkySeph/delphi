@@ -75,6 +75,27 @@ else
     exit 1
 fi
 
+# ── Install native GUI binary ────────────────────────────────
+GUI_BIN_URL="$(curl -sSf "https://api.github.com/repos/${GITHUB_REPO}/releases/tags/v${DELPHI_VERSION}" \
+    | $PYTHON -c "
+import sys, json
+for a in json.load(sys.stdin).get('assets', []):
+    if 'macos' in a['name'].lower() and a['name'].endswith('.tar.gz') and '${WHL_ARCH}' in a['name']:
+        print(a['browser_download_url']); break
+" 2>/dev/null)" || true
+
+if [[ -n "$GUI_BIN_URL" ]]; then
+    echo "⚙  Installing Delphi Studio (GUI)..."
+    TMPDIR="$(mktemp -d)"
+    curl -sSfL "$GUI_BIN_URL" -o "$TMPDIR/delphi-studio.tar.gz"
+    tar -xzf "$TMPDIR/delphi-studio.tar.gz" -C "$TMPDIR"
+    install -m 755 "$TMPDIR/delphi-studio" "$LAUNCHER_DIR/delphi-studio"
+    rm -rf "$TMPDIR"
+    echo "✔  Installed Delphi Studio GUI"
+else
+    echo "⚠  No GUI binary found for macOS ${ARCH} — CLI/REPL still available"
+fi
+
 # ── Create launcher on PATH ─────────────────────────────────
 mkdir -p "$LAUNCHER_DIR"
 cat > "$LAUNCHER_DIR/delphi" << EOF
@@ -98,7 +119,9 @@ mkdir -p "$HOME/.local/share/delphi/projects" "$HOME/.delphi/soundfonts"
 
 # ── Done ─────────────────────────────────────────────────────
 echo ""
-echo "✔  Delphi installed! Run 'delphi' to start."
+echo "✔  Delphi installed!"
+echo "   Run 'delphi' for the CLI/REPL"
+echo "   Run 'delphi-studio' for the GUI"
 echo "   Venv:       $DELPHI_VENV"
 echo "   SoundFonts: ~/.delphi/soundfonts/"
 echo "   Projects:   ~/.local/share/delphi/projects/"
