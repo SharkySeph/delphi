@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+use rand::Rng;
 use serde::{Deserialize, Serialize};
 
 use delphi_core::{Duration, Dynamic, Note, Tempo};
@@ -171,7 +172,7 @@ impl StudioState {
     /// Load project state from a .dstudio JSON file.
     /// Supports both GUI format (settings/cells/tracks) and Python format
     /// (version/title/settings/cells with type+meta).
-    pub fn load(&mut self, path: &PathBuf) {
+    pub fn load(&mut self, path: &PathBuf) -> Result<(), String> {
         // GUI-native format
         #[derive(Deserialize)]
         struct NativeProject {
@@ -223,18 +224,20 @@ impl StudioState {
             velocity: Option<u8>,
         }
 
-        if let Ok(contents) = std::fs::read_to_string(path) {
-            // Try native format first
-            if let Ok(project) = serde_json::from_str::<NativeProject>(&contents) {
-                self.settings = project.settings;
-                self.cells = project.cells;
-                self.tracks = if project.tracks.is_empty() {
-                    vec![TrackState::new("Track 1", "piano", 0, 0)]
-                } else {
-                    project.tracks
-                };
-                return;
-            }
+        let contents = std::fs::read_to_string(path)
+            .map_err(|e| format!("Could not read file: {}", e))?;
+
+        // Try native format first
+        if let Ok(project) = serde_json::from_str::<NativeProject>(&contents) {
+            self.settings = project.settings;
+            self.cells = project.cells;
+            self.tracks = if project.tracks.is_empty() {
+                vec![TrackState::new("Track 1", "piano", 0, 0)]
+            } else {
+                project.tracks
+            };
+            return Ok(());
+        }
 
             // Try Python format
             if let Ok(py) = serde_json::from_str::<PyProject>(&contents) {
@@ -320,18 +323,20 @@ impl StudioState {
                 if self.tracks.is_empty() {
                     self.tracks.push(TrackState::new("Track 1", "piano", 0, 0));
                 }
-                return;
+                return Ok(());
             }
 
-            // Try loading as plain .delphi notation — single cell
-            if !contents.trim().is_empty() && !contents.trim_start().starts_with('{') {
-                self.settings = ProjectSettings::default();
-                let mut cell = Cell::new_notation();
-                cell.source = contents;
-                self.cells = vec![cell];
-                self.tracks = vec![TrackState::new("Track 1", "piano", 0, 0)];
-            }
+        // Try loading as plain .delphi notation — single cell
+        if !contents.trim().is_empty() && !contents.trim_start().starts_with('{') {
+            self.settings = ProjectSettings::default();
+            let mut cell = Cell::new_notation();
+            cell.source = contents;
+            self.cells = vec![cell];
+            self.tracks = vec![TrackState::new("Track 1", "piano", 0, 0)];
+            return Ok(());
         }
+
+        Err("Unrecognized file format".into())
     }
 
     /// Move a cell up by one position. Returns true if moved.
@@ -352,6 +357,18 @@ impl StudioState {
         } else {
             false
         }
+    }
+
+    /// Build a per-channel pan map from track settings.
+    pub fn channel_pan_map(&self) -> [f32; 16] {
+        let mut pan = [0.5_f32; 16]; // default center
+        for track in &self.tracks {
+            let ch = track.channel as usize;
+            if ch < 16 {
+                pan[ch] = track.pan;
+            }
+        }
+        pan
     }
 
     /// Collect SfEvents from all cells (or a single cell) by parsing notation.
@@ -411,8 +428,21 @@ impl StudioState {
                     ev.velocity = ((ev.velocity as f32 * gain).round() as u8).min(127);
                 }
             }
+            // Apply swing and humanize from project settings
+            apply_swing(&mut events, self.settings.swing);
+            apply_humanize(&mut events, self.settings.humanize);
             all_events.extend(events);
         }
+
+        // Post-filter: remove events whose channel maps to a muted/non-solo'd track
+        // (handles drum events on ch9 produced by cells on other channels)
+        all_events.retain(|ev| {
+            if let Some(trk) = self.tracks.iter().find(|t| t.channel == ev.channel) {
+                if trk.muted { return false; }
+                if any_solo && !trk.solo { return false; }
+            }
+            true
+        });
 
         all_events
     }
@@ -431,8 +461,19 @@ impl StudioState {
                     }
                 });
                 ui.horizontal(|ui| {
-                    ui.label("Program:");
-                    ui.text_edit_singleline(&mut track.instrument);
+                    ui.label("Instrument:");
+                    let prev_instrument = track.instrument.clone();
+                    egui::ComboBox::from_id_salt(format!("track_inst_{}", idx))
+                        .selected_text(&track.instrument)
+                        .width(140.0)
+                        .show_ui(ui, |ui| {
+                            for &name in GM_INSTRUMENT_NAMES {
+                                ui.selectable_value(&mut track.instrument, name.to_string(), name);
+                            }
+                        });
+                    if track.instrument != prev_instrument {
+                        track.program = gm_program_from_name(&track.instrument);
+                    }
                 });
                 ui.horizontal(|ui| {
                     ui.label("Ch:");
@@ -440,7 +481,6 @@ impl StudioState {
                     if ui.add(egui::DragValue::new(&mut ch).range(0..=15)).changed() {
                         track.channel = ch as u8;
                     }
-                    ui.label("Vel:");
                 });
                 ui.checkbox(&mut track.muted, "Mute");
                 ui.checkbox(&mut track.solo, "Solo");
@@ -743,6 +783,25 @@ pub fn parse_notation_to_events(
     let mut current_duration: u32 = 480; // default quarter note
     let mut velocity = default_velocity;
     let mut tie_accum: u32 = 0; // accumulated tie duration
+    let mut cresc_ramp: Option<(u8, u8, usize, usize)> = None; // (start_vel, end_vel, total_notes, notes_applied)
+
+    // Extract inline pragmas — these override the caller-supplied values
+    let mut channel = channel;
+    let mut program = program;
+    for line in source.lines() {
+        let line = line.trim();
+        if let Some(rest) = line.strip_prefix("# @instrument ") {
+            program = gm_program_from_name(rest.trim());
+        } else if let Some(rest) = line.strip_prefix("# @channel ") {
+            if let Ok(ch) = rest.trim().parse::<u8>() {
+                channel = ch;
+            }
+        } else if let Some(rest) = line.strip_prefix("# @velocity ") {
+            if let Ok(v) = rest.trim().parse::<u8>() {
+                velocity = v;
+            }
+        }
+    }
 
     // Flatten source into one big token stream, handling grouping constructs.
     // We process line-by-line to skip comments/pragmas, then tokenize.
@@ -849,7 +908,9 @@ pub fn parse_notation_to_events(
             if !sub_tokens.is_empty() {
                 let sub_dur = current_duration / sub_tokens.len() as u32;
                 for st in &sub_tokens {
+                    let prev_len = events.len();
                     emit_token(st, &mut events, &mut tick, sub_dur, velocity, channel, program, &mut tie_accum);
+                    apply_ramp(&mut events, prev_len, &mut cresc_ramp);
                 }
             }
             continue;
@@ -901,7 +962,9 @@ pub fn parse_notation_to_events(
             let sub_dur = total_time / note_count;
 
             for st in &sub_tokens {
+                let prev_len = events.len();
                 emit_token(st, &mut events, &mut tick, sub_dur, velocity, channel, program, &mut tie_accum);
+                apply_ramp(&mut events, prev_len, &mut cresc_ramp);
             }
             continue;
         }
@@ -938,7 +1001,9 @@ pub fn parse_notation_to_events(
             for st in &sub_tokens {
                 let save_tick = tick;
                 tick = base_tick;
+                let prev_len = events.len();
                 emit_token(st, &mut events, &mut tick, current_duration, velocity, channel, program, &mut tie_accum);
+                apply_ramp(&mut events, prev_len, &mut cresc_ramp);
                 let advance = tick - base_tick;
                 if advance > max_advance {
                     max_advance = advance;
@@ -949,8 +1014,31 @@ pub fn parse_notation_to_events(
             continue;
         }
 
+        // ── Crescendo / Decrescendo: cresc(p,f,4), dim(f,p,4) ──
+        if (raw.starts_with("cresc(") || raw.starts_with("dim(")) && raw.ends_with(')') {
+            if let Some(paren) = raw.find('(') {
+                let args_str = &raw[paren + 1..raw.len() - 1];
+                let args: Vec<&str> = args_str.split(',').collect();
+                if args.len() >= 3 {
+                    let start_vel = Dynamic::velocity_from_str(args[0].trim());
+                    let end_vel = Dynamic::velocity_from_str(args[1].trim());
+                    if let (Some(sv), Some(ev)) = (start_vel, end_vel) {
+                        if let Ok(n) = args[2].trim().parse::<usize>() {
+                            if n > 0 {
+                                cresc_ramp = Some((sv, ev, n, 0));
+                            }
+                        }
+                    }
+                }
+            }
+            i += 1;
+            continue;
+        }
+
         // ── Regular token ──
+        let prev_len = events.len();
         emit_token(raw, &mut events, &mut tick, current_duration, velocity, channel, program, &mut tie_accum);
+        apply_ramp(&mut events, prev_len, &mut cresc_ramp);
         i += 1;
     }
 
@@ -975,6 +1063,14 @@ fn emit_token(
     }
 
     let parts = split_token(raw);
+
+    // Random removal: C4?0.3 means 30% chance of being replaced by a rest
+    if let Some(prob) = parts.random_prob {
+        if rand::thread_rng().gen::<f32>() < prob {
+            *tick += parts.duration.unwrap_or(default_dur);
+            return;
+        }
+    }
 
     let core = parts.core;
     if core.is_empty() { return; }
@@ -1237,20 +1333,108 @@ fn emit_token(
     // Unknown token — skip
 }
 
-/// Euclidean rhythm generator.
+/// Euclidean rhythm generator (Bjorklund algorithm).
 fn euclidean(hits: usize, steps: usize) -> Vec<bool> {
     if steps == 0 {
         return vec![];
     }
-    let mut pattern = vec![false; steps];
     if hits == 0 {
-        return pattern;
+        return vec![false; steps];
     }
-    for i in 0..hits.min(steps) {
-        let pos = (i * steps) / hits;
-        pattern[pos] = true;
+    let hits = hits.min(steps);
+    if hits == steps {
+        return vec![true; steps];
     }
-    pattern
+    // Bjorklund's algorithm via iterative grouping
+    let mut front: Vec<Vec<bool>> = vec![vec![true]; hits];
+    let mut back: Vec<Vec<bool>> = vec![vec![false]; steps - hits];
+    while back.len() > 1 {
+        let take = front.len().min(back.len());
+        let tails: Vec<Vec<bool>> = back.drain(..take).collect();
+        for (i, tail) in tails.into_iter().enumerate() {
+            front[i].extend(tail);
+        }
+        if back.is_empty() {
+            // Split front into new front (majority) and back (minority)
+            let first_len = front[0].len();
+            let split = front.iter().position(|g| g.len() != first_len).unwrap_or(front.len());
+            if split < front.len() {
+                back = front.split_off(split);
+            } else {
+                break;
+            }
+        }
+    }
+    front.into_iter().chain(back).flatten().collect()
+}
+
+/// Apply crescendo/decrescendo velocity ramp to newly emitted events.
+/// Each call to this (when new events were added) counts as one step in the ramp.
+fn apply_ramp(
+    events: &mut [SfEvent],
+    prev_len: usize,
+    ramp: &mut Option<(u8, u8, usize, usize)>,
+) {
+    if events.len() <= prev_len {
+        return;
+    }
+    let done = match ramp {
+        Some((sv, ev, total, applied)) if *applied < *total => {
+            let t = if *total <= 1 {
+                1.0
+            } else {
+                *applied as f32 / (*total - 1) as f32
+            };
+            let vel = ((*sv as f32 + t * (*ev as f32 - *sv as f32)).round() as u8).min(127);
+            for event in events[prev_len..].iter_mut() {
+                event.velocity = vel;
+            }
+            *applied += 1;
+            *applied >= *total
+        }
+        _ => false,
+    };
+    if done {
+        *ramp = None;
+    }
+}
+
+/// Apply swing to events by delaying offbeat eighth notes.
+fn apply_swing(events: &mut [SfEvent], amount: f32) {
+    if amount.abs() < 0.001 {
+        return;
+    }
+    let tpq: u32 = 480;
+    let eighth: u32 = tpq / 2; // 240
+    let max_shift = tpq / 3;   // 160
+    let shift = (max_shift as f32 * amount) as u32;
+    for ev in events.iter_mut() {
+        if ev.tick % tpq == eighth {
+            ev.tick += shift;
+            ev.duration_ticks = ev.duration_ticks.saturating_sub(shift);
+        }
+    }
+}
+
+/// Apply humanize by adding random jitter to timing and velocity.
+fn apply_humanize(events: &mut [SfEvent], amount: f32) {
+    if amount.abs() < 0.001 {
+        return;
+    }
+    let mut rng = rand::thread_rng();
+    let tpq: f32 = 480.0;
+    let tick_range = (tpq * 0.04 * amount) as i32;
+    let vel_range = (12.0 * amount) as i32;
+    for ev in events.iter_mut() {
+        if tick_range > 0 {
+            let jitter = rng.gen_range(-tick_range..=tick_range);
+            ev.tick = (ev.tick as i32 + jitter).max(0) as u32;
+        }
+        if vel_range > 0 {
+            let jitter = rng.gen_range(-vel_range..=vel_range);
+            ev.velocity = (ev.velocity as i32 + jitter).clamp(1, 127) as u8;
+        }
+    }
 }
 
 /// Parse notation and return events PLUS a list of warning strings for unknown tokens.
@@ -1296,7 +1480,7 @@ pub fn parse_notation_with_diagnostics(
             // Check if it's a recognizable token
             if core.parse::<u32>().is_ok() { continue; } // tuplet count
             if drum_name_to_midi(core) > 0 { continue; }
-            if core.contains('(') && core.ends_with(')') { continue; } // euclidean
+            if core.contains('(') && core.ends_with(')') { continue; } // euclidean / cresc / dim
             if core.contains(',') { continue; } // polyphony
             if core.contains('/') {
                 // slash chord
@@ -1343,9 +1527,31 @@ fn drum_name_to_midi(name: &str) -> u8 {
     }
 }
 
+/// Canonical instrument names for UI dropdowns, in GM program order.
+pub const GM_INSTRUMENT_NAMES: &[&str] = &[
+    "piano", "bright piano", "electric piano", "harpsichord", "clavinet",
+    "celesta", "glockenspiel", "music box", "vibraphone", "marimba",
+    "xylophone", "organ", "accordion", "harmonica",
+    "nylon guitar", "acoustic guitar", "electric guitar", "overdriven guitar",
+    "bass", "electric bass", "pick bass", "slap bass", "synth bass",
+    "violin", "viola", "cello", "contrabass", "strings", "synth strings",
+    "choir", "orchestra hit",
+    "trumpet", "trombone", "tuba", "french horn", "brass", "synth brass",
+    "soprano sax", "alto sax", "tenor sax", "baritone sax",
+    "oboe", "english horn", "bassoon", "clarinet",
+    "piccolo", "flute", "recorder", "pan flute",
+    "sitar", "banjo", "shamisen", "koto", "steel drum",
+    "drums",
+];
+
 /// Map instrument name to General MIDI program number.
 pub fn gm_program_from_name(name: &str) -> u8 {
-    match name.to_lowercase().as_str() {
+    gm_program_from_name_checked(name).unwrap_or(0)
+}
+
+/// Map instrument name to General MIDI program number, returning `None` for unknown names.
+pub fn gm_program_from_name_checked(name: &str) -> Option<u8> {
+    Some(match name.to_lowercase().as_str() {
         "piano" | "acoustic grand" | "grand piano" => 0,
         "bright piano" => 1,
         "electric piano" | "epiano" | "rhodes" => 4,
@@ -1401,6 +1607,6 @@ pub fn gm_program_from_name(name: &str) -> u8 {
         "koto" => 107,
         "steel drum" => 114,
         "drums" | "percussion" | "drum kit" => 0, // channel 9 handles this
-        _ => 0,
-    }
+        _ => return None,
+    })
 }

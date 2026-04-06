@@ -54,6 +54,17 @@ pub fn play_with_soundfont(
     tempo: &Tempo,
     stop: &Arc<AtomicBool>,
 ) -> Result<(), SfPlaybackError> {
+    play_with_soundfont_panned(sf_path, events, tempo, stop, &[0.5; 16])
+}
+
+/// Render multi-voice events to the audio output with per-channel pan (0.0=left, 0.5=center, 1.0=right).
+pub fn play_with_soundfont_panned(
+    sf_path: &Path,
+    events: &[SfEvent],
+    tempo: &Tempo,
+    stop: &Arc<AtomicBool>,
+    channel_pan: &[f32; 16],
+) -> Result<(), SfPlaybackError> {
     let sample_rate = 44100_u32;
 
     // Load the SoundFont
@@ -70,8 +81,8 @@ pub fn play_with_soundfont(
         .map_err(|e| SfPlaybackError::Synth(format!("{:?}", e)))?;
 
     // Build timed MIDI messages from events
-    let mut messages = build_messages(events, tempo, sample_rate);
-    messages.sort_by_key(|m| (m.sample, m.command)); // program changes first, then note-on/off
+    let mut messages = build_messages(events, tempo, sample_rate, channel_pan);
+    messages.sort_by_key(|m| (m.sample, m.command)); // CC first, then program changes, then note-on/off
 
     // Pre-render to a buffer (offline rendering for precision)
     let total_samples = messages
@@ -122,6 +133,17 @@ pub fn render_to_wav(
     tempo: &Tempo,
     output_path: &Path,
 ) -> Result<(), SfPlaybackError> {
+    render_to_wav_panned(sf_path, events, tempo, output_path, &[0.5; 16])
+}
+
+/// Render multi-voice events to a WAV file with per-channel pan.
+pub fn render_to_wav_panned(
+    sf_path: &Path,
+    events: &[SfEvent],
+    tempo: &Tempo,
+    output_path: &Path,
+    channel_pan: &[f32; 16],
+) -> Result<(), SfPlaybackError> {
     let sample_rate = 44100_u32;
 
     let mut sf_file = File::open(sf_path)
@@ -135,7 +157,7 @@ pub fn render_to_wav(
     let mut synth = Synthesizer::new(&sound_font, &settings)
         .map_err(|e| SfPlaybackError::Synth(format!("{:?}", e)))?;
 
-    let mut messages = build_messages(events, tempo, sample_rate);
+    let mut messages = build_messages(events, tempo, sample_rate, channel_pan);
     messages.sort_by_key(|m| (m.sample, m.command));
 
     let total_samples = messages
@@ -176,30 +198,52 @@ pub fn render_to_wav(
     Ok(())
 }
 
-fn build_messages(events: &[SfEvent], tempo: &Tempo, sample_rate: u32) -> Vec<TimedMessage> {
+fn build_messages(events: &[SfEvent], tempo: &Tempo, sample_rate: u32, channel_pan: &[f32; 16]) -> Vec<TimedMessage> {
     let mut messages = Vec::new();
 
-    // Collect unique (channel, program) pairs and emit program changes at the start
-    let mut seen_channels = [false; 16];
-    for evt in events {
-        let ch = evt.channel as usize;
-        if ch < 16 && !seen_channels[ch] {
-            seen_channels[ch] = true;
-            messages.push(TimedMessage {
-                sample: 0,
-                channel: evt.channel as i32,
-                command: 0xC0, // program change
-                data1: evt.program as i32,
-                data2: 0,
-            });
-        }
+    // Emit per-channel pan CC#10 messages at sample 0
+    for ch in 0..16u8 {
+        let pan_value = (channel_pan[ch as usize].clamp(0.0, 1.0) * 127.0).round() as i32;
+        messages.push(TimedMessage {
+            sample: 0,
+            channel: ch as i32,
+            command: 0xB0, // control change
+            data1: 10,     // CC#10 = pan
+            data2: pan_value,
+        });
     }
 
-    // Note-on and note-off for each event
-    for evt in events {
+    // Sort events by tick so we can emit program changes at the right time
+    let mut sorted: Vec<&SfEvent> = events.iter().collect();
+    sorted.sort_by_key(|e| e.tick);
+
+    // Track the current program per channel so we emit program changes when needed
+    let mut current_program: [Option<u8>; 16] = [None; 16];
+
+    for evt in &sorted {
+        let ch = evt.channel as usize;
         let start_sec = evt.start_seconds(tempo);
-        let dur_sec = evt.duration_seconds(tempo);
         let start_sample = (start_sec * sample_rate as f64) as u64;
+
+        // Emit program change if this channel hasn't been set yet or program differs
+        if ch < 16 {
+            let needs_change = match current_program[ch] {
+                None => true,
+                Some(p) => p != evt.program,
+            };
+            if needs_change {
+                current_program[ch] = Some(evt.program);
+                messages.push(TimedMessage {
+                    sample: start_sample,
+                    channel: evt.channel as i32,
+                    command: 0xC0, // program change
+                    data1: evt.program as i32,
+                    data2: 0,
+                });
+            }
+        }
+
+        let dur_sec = evt.duration_seconds(tempo);
         let end_sample = start_sample + (dur_sec * sample_rate as f64) as u64;
 
         messages.push(TimedMessage {

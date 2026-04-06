@@ -3,8 +3,11 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
 
-use delphi_core::duration::Tempo;
-use delphi_engine::soundfont::{play_with_soundfont, SfEvent};
+use delphi_core::duration::{Duration, Tempo};
+use delphi_core::dynamics::Velocity;
+use delphi_engine::scheduler::AudioEvent;
+use delphi_engine::soundfont::{play_with_soundfont_panned, SfEvent};
+use delphi_engine::AudioOutput;
 
 use crate::studio::StudioState;
 
@@ -16,7 +19,7 @@ pub struct TransportState {
     /// Elapsed seconds since play started (for display).
     elapsed_secs: f64,
     /// BPM override (when set, overrides project tempo).
-    bpm_override: Option<f64>,
+    pub bpm_override: Option<f64>,
     /// Soundfont status message shown in transport bar.
     sf_status: String,
 }
@@ -50,8 +53,11 @@ impl TransportState {
         studio: &StudioState,
         stop_flag: &Arc<AtomicBool>,
         sf_path: Option<&PathBuf>,
+        master_gain: f32,
     ) {
-        self.play_events(studio.collect_events(None), studio.tempo(), stop_flag, sf_path);
+        let tempo = self.effective_tempo(studio);
+        let pan = studio.channel_pan_map();
+        self.play_events(studio.collect_events_mixed(None, master_gain), tempo, stop_flag, sf_path, pan);
     }
 
     /// Play a single cell by index.
@@ -61,8 +67,19 @@ impl TransportState {
         cell_idx: usize,
         stop_flag: &Arc<AtomicBool>,
         sf_path: Option<&PathBuf>,
+        master_gain: f32,
     ) {
-        self.play_events(studio.collect_events(Some(cell_idx)), studio.tempo(), stop_flag, sf_path);
+        let tempo = self.effective_tempo(studio);
+        let pan = studio.channel_pan_map();
+        self.play_events(studio.collect_events_mixed(Some(cell_idx), master_gain), tempo, stop_flag, sf_path, pan);
+    }
+
+    /// Resolve effective tempo: bpm_override if set, otherwise project tempo.
+    fn effective_tempo(&self, studio: &StudioState) -> Tempo {
+        match self.bpm_override {
+            Some(bpm) => Tempo { bpm },
+            None => studio.tempo(),
+        }
     }
 
     fn play_events(
@@ -71,6 +88,7 @@ impl TransportState {
         tempo: Tempo,
         stop_flag: &Arc<AtomicBool>,
         sf_path: Option<&PathBuf>,
+        channel_pan: [f32; 16],
     ) {
         if self.playing {
             return;
@@ -98,17 +116,25 @@ impl TransportState {
         std::thread::spawn(move || {
             if sf.is_file() {
                 loop {
-                    let _ = play_with_soundfont(&sf, &events, &tempo, &stop);
+                    let _ = play_with_soundfont_panned(&sf, &events, &tempo, &stop, &channel_pan);
                     if !looping || stop.load(Ordering::Relaxed) {
                         break;
                     }
                     stop.store(false, Ordering::SeqCst);
                 }
             } else {
-                // No soundfont — just wait. Future: use oscillator fallback.
-                while !stop.load(Ordering::Relaxed) {
-                    std::thread::sleep(std::time::Duration::from_millis(50));
-                }
+                // Oscillator fallback: convert SfEvents to AudioEvents and play via synth
+                let audio_events: Vec<AudioEvent> = events
+                    .iter()
+                    .map(|ev| AudioEvent {
+                        tick: ev.tick,
+                        midi_note: ev.midi_note,
+                        velocity: Velocity(ev.velocity),
+                        duration: Duration::new(ev.duration_ticks),
+                    })
+                    .collect();
+                let output = AudioOutput::new();
+                let _ = output.play_events(&audio_events, &tempo, &stop);
             }
         });
     }
@@ -126,6 +152,7 @@ impl TransportState {
         studio: &StudioState,
         stop_flag: &Arc<AtomicBool>,
         sf_path: Option<&PathBuf>,
+        master_gain: f32,
     ) {
         ui.horizontal(|ui| {
             // Play / Stop
@@ -134,7 +161,7 @@ impl TransportState {
                     self.stop(stop_flag);
                 }
             } else if ui.button("▶ Play").clicked() {
-                self.play(studio, stop_flag, sf_path);
+                self.play(studio, stop_flag, sf_path, master_gain);
             }
 
             ui.separator();

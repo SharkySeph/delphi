@@ -1,6 +1,6 @@
 use eframe::CreationContext;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use crate::editor::EditorState;
@@ -109,8 +109,13 @@ impl DelphiApp {
                         .add_filter("Delphi", &["delphi"])
                         .pick_file()
                     {
-                        self.studio.load(&path);
-                        self.project_path = Some(path);
+                        match self.studio.load(&path) {
+                            Ok(()) => self.project_path = Some(path),
+                            Err(e) => {
+                                // Show error inline — the status will be visible
+                                eprintln!("Failed to open project: {}", e);
+                            }
+                        }
                     }
                     ui.close_menu();
                 }
@@ -153,6 +158,7 @@ impl DelphiApp {
                 ui.separator();
                 if ui.button("Export…").clicked() {
                     self.export_dialog.sf_path = self.soundfont_mgr.active_path.clone();
+                    self.export_dialog.master_gain = self.mixer.master_gain;
                     self.export_dialog.open = true;
                     ui.close_menu();
                 }
@@ -174,16 +180,16 @@ impl DelphiApp {
 
             ui.menu_button("Transport", |ui| {
                 if ui.button("▶ Play All (F5)").clicked() {
-                    self.transport.play(&self.studio, &self.stop_flag, self.soundfont_mgr.active_path.as_ref());
+                    self.transport.play(&self.studio, &self.stop_flag, self.soundfont_mgr.active_path.as_ref(), self.mixer.master_gain);
                     ui.close_menu();
                 }
                 if ui.button("▶ Play Cell (F6)").clicked() {
                     let idx = self.editor.active_cell;
-                    self.transport.play_cell(&self.studio, idx, &self.stop_flag, self.soundfont_mgr.active_path.as_ref());
+                    self.transport.play_cell(&self.studio, idx, &self.stop_flag, self.soundfont_mgr.active_path.as_ref(), self.mixer.master_gain);
                     ui.close_menu();
                 }
                 if ui.button("⏹ Stop (Esc)").clicked() {
-                    self.stop_flag.store(true, Ordering::SeqCst);
+                    self.transport.stop(&self.stop_flag);
                     ui.close_menu();
                 }
             });
@@ -394,16 +400,16 @@ impl eframe::App for DelphiApp {
         ctx.input(|i| {
             // F5: Play
             if i.key_pressed(egui::Key::F5) {
-                self.transport.play(&self.studio, &self.stop_flag, self.soundfont_mgr.active_path.as_ref());
+                self.transport.play(&self.studio, &self.stop_flag, self.soundfont_mgr.active_path.as_ref(), self.mixer.master_gain);
             }
             // Escape: Stop
             if i.key_pressed(egui::Key::Escape) {
-                self.stop_flag.store(true, Ordering::SeqCst);
+                self.transport.stop(&self.stop_flag);
             }
             // F6: Run current cell
             if i.key_pressed(egui::Key::F6) {
                 let idx = self.editor.active_cell;
-                self.transport.play_cell(&self.studio, idx, &self.stop_flag, self.soundfont_mgr.active_path.as_ref());
+                self.transport.play_cell(&self.studio, idx, &self.stop_flag, self.soundfont_mgr.active_path.as_ref(), self.mixer.master_gain);
             }
             // F7: Add cell
             if i.key_pressed(egui::Key::F7) {
@@ -427,6 +433,7 @@ impl eframe::App for DelphiApp {
             // Ctrl+E: Export
             if i.modifiers.ctrl && i.key_pressed(egui::Key::E) {
                 self.export_dialog.sf_path = self.soundfont_mgr.active_path.clone();
+                self.export_dialog.master_gain = self.mixer.master_gain;
                 self.export_dialog.open = true;
             }
             // Ctrl+Up: Navigate to previous cell
@@ -469,8 +476,13 @@ impl eframe::App for DelphiApp {
 
         // Transport bar (below menu)
         egui::TopBottomPanel::top("transport_bar").show(ctx, |ui| {
-            self.transport.ui(ui, &self.studio, &self.stop_flag, self.soundfont_mgr.active_path.as_ref());
+            self.transport.ui(ui, &self.studio, &self.stop_flag, self.soundfont_mgr.active_path.as_ref(), self.mixer.master_gain);
         });
+
+        // Sync transport BPM override into project settings so exports use it
+        if let Some(bpm) = self.transport.bpm_override {
+            self.studio.settings.bpm = bpm;
+        }
 
         // Bottom panel (mixer / visualizer / theory)
         if self.show_bottom {
@@ -548,14 +560,14 @@ impl eframe::App for DelphiApp {
 
         // Handle cell run request from editor's ▶ button
         if let Some(idx) = self.editor.cell_to_run.take() {
-            self.transport.play_cell(&self.studio, idx, &self.stop_flag, self.soundfont_mgr.active_path.as_ref());
+            self.transport.play_cell(&self.studio, idx, &self.stop_flag, self.soundfont_mgr.active_path.as_ref(), self.mixer.master_gain);
             self.editor.last_run_cell = Some(idx);
         }
 
         // Update visualizer with playback state
         {
             let events = self.studio.collect_events_mixed(None, self.mixer.master_gain);
-            let bpm = self.studio.settings.bpm;
+            let bpm = self.transport.bpm_override.unwrap_or(self.studio.settings.bpm);
             let playing = self.transport.is_playing();
             let elapsed = self.transport.elapsed_secs();
             self.visualizer.update_playback(&events, elapsed, bpm, playing);

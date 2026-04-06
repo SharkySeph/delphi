@@ -42,6 +42,8 @@ impl SoundFontManager {
                 self.active_path = Some(p);
                 self.status = format!("Loaded from $DELPHI_SOUNDFONT");
                 // Continue scanning so the user sees everything available
+            } else {
+                self.status = format!("Warning: $DELPHI_SOUNDFONT path not found: {}", env_path);
             }
         }
 
@@ -215,7 +217,9 @@ impl SoundFontManager {
 
 /// Get the Delphi config home: ~/.delphi/
 fn delphi_home() -> PathBuf {
-    if let Some(home) = std::env::var_os("HOME") {
+    if let Some(home) = std::env::var_os("HOME")
+        .or_else(|| std::env::var_os("USERPROFILE"))
+    {
         PathBuf::from(home).join(".delphi")
     } else {
         PathBuf::from(".delphi")

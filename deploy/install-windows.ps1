@@ -50,7 +50,7 @@ if (-not $Version) {
         $rel = Invoke-RestMethod "https://api.github.com/repos/$GithubRepo/releases/latest"
         $Version = $rel.tag_name.TrimStart("v")
     } catch {
-        Write-Host "Error: Could not find a release. Set DELPHI_VERSION=0.6.1" -ForegroundColor Red; exit 1
+        Write-Host "Error: Could not find a release. Set DELPHI_VERSION=0.7.0" -ForegroundColor Red; exit 1
     }
 }
 $wheelUrl = $null

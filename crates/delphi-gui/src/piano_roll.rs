@@ -13,7 +13,7 @@ pub struct RollNote {
     pub selected: bool,
 }
 
-/// Visual piano roll for note editing.
+/// Visual piano roll for note display (read-only).
 pub struct PianoRoll {
     /// Horizontal zoom: pixels per tick.
     pub zoom_x: f32,
@@ -29,6 +29,8 @@ pub struct PianoRoll {
     pub notes: Vec<RollNote>,
     /// Currently selected note indices.
     pub selection: Vec<usize>,
+    /// Dirty flag: hash of cell sources last synced.
+    sync_hash: u64,
 }
 
 impl PianoRoll {
@@ -41,6 +43,7 @@ impl PianoRoll {
             snap_ticks: 240, // Eighth note
             notes: Vec::new(),
             selection: Vec::new(),
+            sync_hash: 0,
         }
     }
 
@@ -64,11 +67,16 @@ impl PianoRoll {
     }
 
     pub fn ui(&mut self, ui: &mut egui::Ui, studio: &mut StudioState) {
-        // Sync notes from studio cells every frame
-        self.sync_from_studio(studio);
+        // Sync notes from studio cells only when sources change
+        self.sync_from_studio_if_dirty(studio);
 
         // Toolbar
         ui.horizontal(|ui| {
+            ui.label(
+                egui::RichText::new("Piano Roll (read-only)")
+                    .color(Color32::from_rgb(150, 150, 160)),
+            );
+            ui.separator();
             ui.label("Snap:");
             egui::ComboBox::from_id_salt("snap_grid")
                 .selected_text(snap_label(self.snap_ticks))
@@ -210,6 +218,26 @@ impl PianoRoll {
             self.scroll_x = (self.scroll_x - scroll.x / self.zoom_x).max(0.0);
             self.scroll_y = (self.scroll_y - scroll.y / self.zoom_y).clamp(0.0, 115.0);
         }
+    }
+
+    /// Only rebuild notes if cell sources have changed.
+    fn sync_from_studio_if_dirty(&mut self, studio: &StudioState) {
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+
+        let mut hasher = DefaultHasher::new();
+        for cell in &studio.cells {
+            cell.source.hash(&mut hasher);
+            cell.instrument.hash(&mut hasher);
+            cell.channel.hash(&mut hasher);
+            cell.velocity.hash(&mut hasher);
+        }
+        let new_hash = hasher.finish();
+        if new_hash == self.sync_hash {
+            return;
+        }
+        self.sync_hash = new_hash;
+        self.sync_from_studio(studio);
     }
 
     /// Rebuild the notes list from studio cells via the notation parser.

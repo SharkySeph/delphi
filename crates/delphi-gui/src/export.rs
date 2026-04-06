@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use delphi_core::duration::TimeSignature;
-use delphi_engine::soundfont::render_to_wav;
+use delphi_engine::soundfont::{render_to_wav_panned};
 use delphi_midi::export::{MidiExporter, MidiTrack};
 
 use crate::studio::StudioState;
@@ -22,6 +22,8 @@ pub struct ExportDialog {
     pub status: String,
     /// SoundFont path for WAV rendering.
     pub sf_path: Option<PathBuf>,
+    /// Mixer master gain (synced from app when dialog opens).
+    pub master_gain: f32,
 }
 
 impl ExportDialog {
@@ -32,6 +34,7 @@ impl ExportDialog {
             path: String::new(),
             status: String::new(),
             sf_path: None,
+            master_gain: 1.0,
         }
     }
 
@@ -53,7 +56,7 @@ impl ExportDialog {
                     ui.label("Format:");
                     ui.selectable_value(&mut self.format, ExportFormat::Midi, "MIDI (.mid)");
                     ui.selectable_value(&mut self.format, ExportFormat::Wav, "WAV (.wav)");
-                    ui.selectable_value(&mut self.format, ExportFormat::MusicXml, "MusicXML (.xml)");
+                    ui.add_enabled(false, egui::SelectableLabel::new(false, "MusicXML (coming soon)"));
                 });
 
                 ui.horizontal(|ui| {
@@ -107,7 +110,7 @@ impl ExportDialog {
         ui.label("Format:");
         ui.radio_value(&mut self.format, ExportFormat::Midi, "MIDI (.mid)");
         ui.radio_value(&mut self.format, ExportFormat::Wav, "WAV (.wav)");
-        ui.radio_value(&mut self.format, ExportFormat::MusicXml, "MusicXML (.xml)");
+        ui.add_enabled(false, egui::RadioButton::new(false, "MusicXML (coming soon)"));
 
         ui.separator();
 
@@ -147,8 +150,18 @@ impl ExportDialog {
             return;
         }
 
+        // Auto-append correct extension if missing
+        let expected_ext = match self.format {
+            ExportFormat::Midi => ".mid",
+            ExportFormat::Wav => ".wav",
+            ExportFormat::MusicXml => ".xml",
+        };
+        if !self.path.ends_with(expected_ext) {
+            self.path.push_str(expected_ext);
+        }
+
         let path = PathBuf::from(&self.path);
-        let events = studio.collect_events(None);
+        let events = studio.collect_events_mixed(None, self.master_gain);
 
         if events.is_empty() {
             self.status = "Error: no events to export (cells are empty)".into();
@@ -200,7 +213,8 @@ impl ExportDialog {
                     }
                 };
                 let tempo = studio.tempo();
-                match render_to_wav(&sf, &events, &tempo, &path) {
+                let pan = studio.channel_pan_map();
+                match render_to_wav_panned(&sf, &events, &tempo, &path, &pan) {
                     Ok(()) => self.status = format!("Exported WAV to {}", path.display()),
                     Err(e) => self.status = format!("Error: {}", e),
                 }

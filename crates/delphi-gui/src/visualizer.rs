@@ -16,6 +16,8 @@ pub struct Visualizer {
     pub current_tick: u32,
     /// Whether playback is active.
     pub is_playing: bool,
+    /// Last elapsed seconds seen (for incremental tick accumulation).
+    last_elapsed: f64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -35,6 +37,7 @@ impl Visualizer {
             playing_events: Vec::new(),
             current_tick: 0,
             is_playing: false,
+            last_elapsed: 0.0,
         }
     }
 
@@ -54,13 +57,88 @@ impl Visualizer {
     pub fn update_playback(&mut self, events: &[SfEvent], elapsed_secs: f64, bpm: f64, playing: bool) {
         self.is_playing = playing;
         if playing {
-            // Convert elapsed time to tick position
+            // Accumulate ticks incrementally so BPM changes don't cause jumps
+            let dt = if self.last_elapsed > 0.0 {
+                (elapsed_secs - self.last_elapsed).max(0.0)
+            } else {
+                elapsed_secs
+            };
+            self.last_elapsed = elapsed_secs;
             let ticks_per_beat = 480.0;
             let beats_per_sec = bpm / 60.0;
-            self.current_tick = (elapsed_secs * beats_per_sec * ticks_per_beat) as u32;
+            self.current_tick += (dt * beats_per_sec * ticks_per_beat) as u32;
             self.playing_events = events.to_vec();
+
+            // Generate synthetic waveform from active notes
+            self.generate_waveform_from_events(events, elapsed_secs, bpm);
+            // Generate spectrum from active notes
+            self.generate_spectrum_from_events(events, elapsed_secs, bpm);
         } else {
             self.current_tick = 0;
+            self.last_elapsed = 0.0;
+        }
+    }
+
+    /// Synthesize a waveform visualization from active MIDI events.
+    fn generate_waveform_from_events(&mut self, events: &[SfEvent], elapsed_secs: f64, bpm: f64) {
+        let tick = self.current_tick;
+        let active: Vec<&SfEvent> = events
+            .iter()
+            .filter(|e| e.tick <= tick && tick < e.tick + e.duration_ticks)
+            .collect();
+
+        let sample_rate = 44100.0_f64;
+        let num_samples = self.waveform.len();
+
+        for i in 0..num_samples {
+            let t = elapsed_secs + (i as f64 / sample_rate);
+            let mut sample = 0.0_f32;
+            for ev in &active {
+                let freq = 440.0 * 2.0_f64.powf((ev.midi_note as f64 - 69.0) / 12.0);
+                let vel = ev.velocity as f32 / 127.0;
+                sample += (2.0 * std::f32::consts::PI * freq as f32 * t as f32).sin() * vel * 0.3;
+            }
+            self.waveform[i] = sample.tanh();
+        }
+    }
+
+    /// Generate spectrum bins from active notes (frequency-domain approximation).
+    fn generate_spectrum_from_events(&mut self, events: &[SfEvent], _elapsed_secs: f64, _bpm: f64) {
+        let tick = self.current_tick;
+        let active: Vec<&SfEvent> = events
+            .iter()
+            .filter(|e| e.tick <= tick && tick < e.tick + e.duration_ticks)
+            .collect();
+
+        // Clear spectrum
+        for bin in self.spectrum.iter_mut() {
+            *bin = 0.0;
+        }
+
+        let num_bins = self.spectrum.len();
+        // Map MIDI notes to frequency bins (logarithmic, 20 Hz to ~4000 Hz across bins)
+        let min_freq: f64 = 20.0;
+        let max_freq: f64 = 4000.0;
+        for ev in &active {
+            let freq = 440.0 * 2.0_f64.powf((ev.midi_note as f64 - 69.0) / 12.0);
+            if freq < min_freq || freq > max_freq {
+                continue;
+            }
+            // Logarithmic bin mapping
+            let log_pos = (freq / min_freq).ln() / (max_freq / min_freq).ln();
+            let bin = (log_pos * num_bins as f64) as usize;
+            if bin < num_bins {
+                let vel = ev.velocity as f32 / 127.0;
+                // Main frequency + harmonics spread
+                self.spectrum[bin] = (self.spectrum[bin] + vel * 0.8).min(1.0);
+                // Add some spread to neighboring bins
+                if bin > 0 {
+                    self.spectrum[bin - 1] = (self.spectrum[bin - 1] + vel * 0.3).min(1.0);
+                }
+                if bin + 1 < num_bins {
+                    self.spectrum[bin + 1] = (self.spectrum[bin + 1] + vel * 0.3).min(1.0);
+                }
+            }
         }
     }
 

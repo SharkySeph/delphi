@@ -1,7 +1,7 @@
 use egui::text::LayoutJob;
 use egui::{Color32, FontId, TextFormat};
 
-use crate::studio::StudioState;
+use crate::studio::{StudioState, GM_INSTRUMENT_NAMES};
 
 /// Syntax token types for .delphi notation coloring.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -194,6 +194,10 @@ pub struct EditorState {
     pub completion_items: Vec<&'static str>,
     pub completion_filter: String,
     pub completion_selected: usize,
+    /// Live diagnostics per cell (cell index → warnings).
+    pub cell_diagnostics: Vec<Vec<String>>,
+    /// Tracks which cell sources have been seen (for change detection).
+    cell_hashes: Vec<u64>,
 }
 
 impl EditorState {
@@ -206,6 +210,8 @@ impl EditorState {
             completion_items: Vec::new(),
             completion_filter: String::new(),
             completion_selected: 0,
+            cell_diagnostics: Vec::new(),
+            cell_hashes: Vec::new(),
         }
     }
 
@@ -257,6 +263,12 @@ impl EditorState {
                 frame.show(ui, |ui| {
                     // Cell header
                     ui.horizontal(|ui| {
+                        // Collapse toggle
+                        let collapse_label = if cell.collapsed { "▶" } else { "▼" };
+                        if ui.small_button(collapse_label).clicked() {
+                            cell.collapsed = !cell.collapsed;
+                        }
+
                         let type_label = match cell.cell_type.as_str() {
                             "notation" => "♪",
                             "markdown" => "📄",
@@ -271,13 +283,24 @@ impl EditorState {
                             );
                         }
 
-                        // Instrument / channel info
-                        if !cell.instrument.is_empty() && cell.instrument != "piano" {
-                            ui.label(
-                                egui::RichText::new(format!("🎵 {}", cell.instrument))
-                                    .small()
-                                    .color(Color32::from_rgb(150, 150, 180)),
-                            );
+                        // Instrument selector
+                        if cell.cell_type != "markdown" {
+                            let prev = cell.instrument.clone();
+                            egui::ComboBox::from_id_salt(format!("cell_inst_{}", idx))
+                                .selected_text(format!("🎵 {}", cell.instrument))
+                                .width(120.0)
+                                .show_ui(ui, |ui| {
+                                    for &name in GM_INSTRUMENT_NAMES {
+                                        ui.selectable_value(&mut cell.instrument, name.to_string(), name);
+                                    }
+                                });
+                            if cell.instrument != prev {
+                                // Force diagnostics re-check and clear stale output
+                                if idx < self.cell_hashes.len() {
+                                    self.cell_hashes[idx] = 0;
+                                }
+                                cell.output.clear();
+                            }
                         }
 
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -297,6 +320,17 @@ impl EditorState {
                         });
                     });
 
+                    if cell.collapsed {
+                        // Show a brief preview when collapsed
+                        let preview: String = cell.source.lines().next().unwrap_or("").chars().take(60).collect();
+                        if !preview.is_empty() {
+                            ui.label(
+                                egui::RichText::new(preview)
+                                    .small()
+                                    .color(Color32::from_rgb(120, 120, 140)),
+                            );
+                        }
+                    } else {
                     // Code editor with syntax highlighting
                     let mut layouter = |ui: &egui::Ui, text: &str, wrap_width: f32| {
                         let layout_job = highlight_notation(ui, text, wrap_width);
@@ -313,67 +347,163 @@ impl EditorState {
                         self.active_cell = idx;
                     }
 
-                    // Auto-complete: trigger on Ctrl+Space
+                    // --- Live error checking ---
+                    // Detect source changes via simple hash and re-run diagnostics
+                    {
+                        use std::collections::hash_map::DefaultHasher;
+                        use std::hash::{Hash, Hasher};
+                        while self.cell_diagnostics.len() <= idx {
+                            self.cell_diagnostics.push(Vec::new());
+                            self.cell_hashes.push(0);
+                        }
+                        let mut hasher = DefaultHasher::new();
+                        cell.source.hash(&mut hasher);
+                        let new_hash = hasher.finish();
+                        if new_hash != self.cell_hashes[idx] {
+                            self.cell_hashes[idx] = new_hash;
+                            if cell.cell_type != "markdown" && !cell.source.trim().is_empty() {
+                                let (_events, mut warnings) = crate::studio::parse_notation_with_diagnostics(
+                                    &cell.source,
+                                    cell.channel,
+                                    crate::studio::gm_program_from_name(&cell.instrument),
+                                    cell.velocity,
+                                );
+                                // Warn if cell instrument is unrecognized
+                                if !cell.instrument.is_empty()
+                                    && crate::studio::gm_program_from_name_checked(&cell.instrument).is_none()
+                                {
+                                    warnings.insert(0, format!(
+                                        "unknown instrument '{}' — defaulting to piano",
+                                        cell.instrument,
+                                    ));
+                                }
+                                self.cell_diagnostics[idx] = warnings;
+                            } else {
+                                self.cell_diagnostics[idx].clear();
+                            }
+                        }
+                    }
+
+                    // Show inline diagnostics (warnings/errors) below editor
+                    if idx < self.cell_diagnostics.len() && !self.cell_diagnostics[idx].is_empty() {
+                        for warning in &self.cell_diagnostics[idx] {
+                            ui.horizontal(|ui| {
+                                ui.label(
+                                    egui::RichText::new("⚠")
+                                        .color(Color32::from_rgb(229, 192, 123)),
+                                );
+                                ui.label(
+                                    egui::RichText::new(warning)
+                                        .small()
+                                        .color(Color32::from_rgb(229, 192, 123)),
+                                );
+                            });
+                        }
+                    }
+
+                    // --- Autocomplete ---
                     if is_active && editor_response.has_focus() {
-                        let trigger = ui.input(|i| i.modifiers.ctrl && i.key_pressed(egui::Key::Space));
-                        if trigger {
-                            // Get the last word being typed
+                        // Ctrl+Space to trigger, or auto-trigger on typing
+                        let ctrl_space = ui.input(|i| i.modifiers.ctrl && i.key_pressed(egui::Key::Space));
+                        let source_changed = editor_response.changed();
+
+                        if ctrl_space || (source_changed && self.completion_open) {
+                            // Extract the current word being typed (last token before cursor)
                             let src = &cell.source;
-                            let prefix = src.split(|c: char| c.is_whitespace() || c == '|' || c == '[' || c == ']')
-                                .last()
-                                .unwrap_or("");
+                            let prefix = extract_current_word(src);
                             self.completion_filter = prefix.to_lowercase();
                             self.completion_items = get_completions(&self.completion_filter);
                             self.completion_open = !self.completion_items.is_empty();
                             self.completion_selected = 0;
                         }
 
-                        // Show completion popup
-                        if self.completion_open && is_active {
-                            let popup_id = ui.id().with("autocomplete");
-                            egui::popup_below_widget(ui, popup_id, &editor_response, egui::PopupCloseBehavior::CloseOnClick, |ui| {
-                                ui.set_min_width(200.0);
-                                let items = self.completion_items.clone();
-                                let mut chosen: Option<&str> = None;
-                                for (ci, item) in items.iter().enumerate() {
-                                    let selected = ci == self.completion_selected;
-                                    let label = if selected {
-                                        egui::RichText::new(*item).strong().color(Color32::from_rgb(86, 182, 194))
-                                    } else {
-                                        egui::RichText::new(*item)
-                                    };
-                                    if ui.selectable_label(selected, label).clicked() {
-                                        chosen = Some(item);
-                                    }
+                        // Auto-open on typing if we have items
+                        if source_changed && !self.completion_open {
+                            let prefix = extract_current_word(&cell.source);
+                            if prefix.len() >= 2 {
+                                self.completion_filter = prefix.to_lowercase();
+                                self.completion_items = get_completions(&self.completion_filter);
+                                if !self.completion_items.is_empty() {
+                                    self.completion_open = true;
+                                    self.completion_selected = 0;
                                 }
-                                if let Some(item) = chosen {
-                                    // Insert completion
-                                    let filter_len = self.completion_filter.len();
-                                    let src = &mut cell.source;
-                                    // Replace last partial word with completion
-                                    if filter_len > 0 && src.len() >= filter_len {
-                                        src.truncate(src.len() - filter_len);
-                                    }
-                                    src.push_str(item);
-                                    src.push(' ');
-                                    self.completion_open = false;
-                                }
-                            });
-                            // Keep popup alive
-                            ui.memory_mut(|m| m.open_popup(ui.id().with("autocomplete")));
-
-                            // Handle keyboard navigation in popup
-                            let close = ui.input(|i| {
-                                if i.key_pressed(egui::Key::Escape) {
-                                    return true;
-                                }
-                                false
-                            });
-                            if close {
-                                self.completion_open = false;
                             }
                         }
+
+                        // Keyboard nav for completion list
+                        if self.completion_open {
+                            let nav = ui.input(|i| {
+                                if i.key_pressed(egui::Key::Escape) {
+                                    return CompletionAction::Close;
+                                }
+                                if i.key_pressed(egui::Key::ArrowDown) {
+                                    return CompletionAction::Down;
+                                }
+                                if i.key_pressed(egui::Key::ArrowUp) {
+                                    return CompletionAction::Up;
+                                }
+                                if i.key_pressed(egui::Key::Tab) || i.key_pressed(egui::Key::Enter) {
+                                    return CompletionAction::Accept;
+                                }
+                                CompletionAction::None
+                            });
+
+                            match nav {
+                                CompletionAction::Close => {
+                                    self.completion_open = false;
+                                }
+                                CompletionAction::Down => {
+                                    if !self.completion_items.is_empty() {
+                                        self.completion_selected = (self.completion_selected + 1) % self.completion_items.len();
+                                    }
+                                }
+                                CompletionAction::Up => {
+                                    if !self.completion_items.is_empty() {
+                                        self.completion_selected = if self.completion_selected == 0 {
+                                            self.completion_items.len() - 1
+                                        } else {
+                                            self.completion_selected - 1
+                                        };
+                                    }
+                                }
+                                CompletionAction::Accept => {
+                                    if let Some(&item) = self.completion_items.get(self.completion_selected) {
+                                        apply_completion(&mut cell.source, &self.completion_filter, item);
+                                        self.completion_open = false;
+                                    }
+                                }
+                                CompletionAction::None => {}
+                            }
+                        }
+
+                        // Render completion list below the editor
+                        if self.completion_open && !self.completion_items.is_empty() {
+                            egui::Frame::popup(ui.style())
+                                .show(ui, |ui| {
+                                    ui.set_min_width(200.0);
+                                    for (ci, item) in self.completion_items.iter().enumerate() {
+                                        let selected = ci == self.completion_selected;
+                                        let label = if selected {
+                                            egui::RichText::new(*item)
+                                                .strong()
+                                                .color(Color32::from_rgb(86, 182, 194))
+                                        } else {
+                                            egui::RichText::new(*item)
+                                                .color(Color32::from_rgb(171, 178, 191))
+                                        };
+                                        if ui.selectable_label(selected, label).clicked() {
+                                            apply_completion(&mut cell.source, &self.completion_filter, item);
+                                            self.completion_open = false;
+                                        }
+                                    }
+                                });
+                        }
+                    } else if !editor_response.has_focus() {
+                        // Close completion when editor loses focus
+                        self.completion_open = false;
                     }
+
+                    } // end !collapsed else block
 
                     // Output area
                     if !cell.output.is_empty() {
@@ -513,6 +643,8 @@ fn get_completions(prefix: &str) -> Vec<&'static str> {
         "# @instrument ", "# @track ", "# @channel ", "# @velocity ",
         // Structural
         "breath", "caesura",
+        // Expression
+        "cresc(", "dim(",
     ];
 
     if prefix.is_empty() {
@@ -525,4 +657,44 @@ fn get_completions(prefix: &str) -> Vec<&'static str> {
         .copied()
         .take(12)
         .collect()
+}
+
+/// Actions for keyboard navigation in the completion popup.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CompletionAction {
+    None,
+    Close,
+    Up,
+    Down,
+    Accept,
+}
+
+/// Extract the current word being typed (the last partial token in the source).
+/// This finds the last whitespace/delimiter boundary and returns everything after it.
+fn extract_current_word(src: &str) -> &str {
+    let delimiters = |c: char| c.is_whitespace() || matches!(c, '|' | '[' | ']' | '(' | ')' | '{' | '}');
+    match src.rfind(delimiters) {
+        Some(pos) => &src[pos + 1..],
+        None => src,
+    }
+}
+
+/// Apply a completion: replace the last partial word in source with the chosen item.
+fn apply_completion(source: &mut String, filter: &str, item: &str) {
+    if filter.is_empty() {
+        source.push_str(item);
+        source.push(' ');
+        return;
+    }
+    // Find the last occurrence of the filter text (case-insensitive) and replace it
+    let lower_src = source.to_lowercase();
+    let lower_filter = filter.to_lowercase();
+    if let Some(pos) = lower_src.rfind(&lower_filter) {
+        let end = pos + filter.len();
+        source.replace_range(pos..end, item);
+        // Add trailing space if not already present
+        if !source.ends_with(' ') {
+            source.push(' ');
+        }
+    }
 }
