@@ -1,186 +1,130 @@
-# Delphi Studio TUI — Implementation Plan
+# Delphi Studio — Native GUI Application
 
 ## Vision
-A bespoke terminal notebook IDE for composing full multi-track songs.
-Think Jupyter meets Strudel meets a DAW — all in the terminal via prompt_toolkit.
+A native desktop GUI for composing multi-track music using the Delphi notation language.
+Combines a notebook-style cell editor with a piano roll, mixer, real-time visualizer,
+theory explorer, and SoundFont-powered playback — built entirely in Rust with egui.
 
-## Layout
+## Current State: Implemented ✅
 
+### Layout
 ```
-┌─────────────────────────────────────────────────────┐
-│  🎵 Delphi Studio — my-song          ♩=120  C major │  ← Status bar
-├─────────────────────────────────────────────────────┤
-│ [1] ▶ Setup                                  [Run]  │
-│   tempo(120)                                        │
-│   key("C major")                                    │
-│   ───────────────────────────────────────────────── │
-│   ♪ Context set: 120 BPM, C major                   │  ← Output
-├─────────────────────────────────────────────────────┤
-│ [2] ▶ Track: Melody (piano)                  [Run]  │
-│   C4:q E4:q G4:q C5:h                              │
-│   F4:q A4:q C5:q F5:h                              │
-│   ───────────────────────────────────────────────── │
-│   ♪ 8 notes, 4 bars                                 │
-├─────────────────────────────────────────────────────┤
-│ [3] ▶ Track: Bass (acoustic bass)            [Run]  │
-│   C2:h G2:h  F2:h C2:h                             │
-│   ───────────────────────────────────────────────── │
-│   ♪ 4 notes, 2 bars                                 │
-├─────────────────────────────────────────────────────┤
-│ [4] ▶ Mixdown                                [Run]  │
-│   song = Song("my-song", tempo=120)                 │
-│   song.track("melody", cells[2], program="piano")   │
-│   song.track("bass", cells[3], program="acoustic…") │
-│   song.play()                                       │
-├─────────────────────────────────────────────────────┤
-│ F1:Help  F5:Run Cell  F6:Run All  F7:Add Cell       │
-│ F8:Delete  F9:Export  F10:Save  Ctrl-Q:Quit         │
-└─────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│  Menu │ ▶ Play │ ⏹ Stop │ 🔁 Loop │ ♩=120 │ C major │ 4/4 │  ← Transport bar
+├───────────────┬─────────────────────────────┬───────────────┤
+│               │                             │               │
+│  Track List   │    Center Panel             │  Side Panel   │
+│  - Melody     │    (Editor or Piano Roll)   │  (SoundFont,  │
+│  - Bass       │                             │   Export,     │
+│  - Drums      │    [1] ▶ Track: Melody      │   Script)    │
+│               │    # @instrument piano      │               │
+│               │    C4:q E4:q G4:q C5:h      │               │
+│               │    ─────────────────────     │               │
+│               │    [2] ▶ Track: Bass         │               │
+│               │    # @instrument bass        │               │
+│               │    C2:h G2:h F2:h C2:h      │               │
+│               │                             │               │
+├───────────────┴─────────────────────────────┴───────────────┤
+│  Bottom Panel: Mixer │ Visualizer │ Theory │ Help           │
+└─────────────────────────────────────────────────────────────┘
 ```
 
-## Core Components
+### Core Components (all in `crates/delphi-gui/src/`)
 
-### 1. Cell Model
-```python
-class Cell:
-    id: int
-    cell_type: "code" | "notation" | "markdown"
-    source: str          # editable content
-    output: str          # last run result
-    label: str           # "Track: Piano", "Setup", etc.
-    instrument: str      # GM instrument name (for notation cells)
-    channel: int
-    collapsed: bool
-```
+#### Cell Model (`studio.rs` → wraps `delphi_core::Project`)
+- `Cell`: notation, code, or markdown — with source text and metadata
+- `TrackState`: name, program, channel, pan, mute, solo, reverb, delay
+- `ProjectSettings`: title, BPM, key, time signature, swing, humanize
+- `StudioState`: thin Deref wrapper around `Project`, adds GUI-specific methods
+- Pragmas: `# @instrument piano`, `# @channel 1`, `# @velocity 90`
 
-### 2. Notebook Model
-```python
-class Notebook:
-    title: str
-    cells: list[Cell]
-    song: Song           # accumulated Song object
-    file_path: str       # .dstudio file
-    
-    def run_cell(index)
-    def run_all()        # builds Song from all cells top-to-bottom
-    def add_cell(after)
-    def delete_cell(index)
-    def move_cell(from, to)
-    def save() / load(path)
-    def export_midi() / export_wav() / export_script()
-```
+#### Editor (`editor.rs`)
+- Cell list with collapsible frames
+- Syntax highlighting for Delphi notation
+- Token kinds: Note, Chord, Duration, Barline, Rest, Drum, Operator, Pragma, Comment
+- Per-cell run button + diagnostic display
 
-### 3. Cell Types & Execution
+#### Transport (`player.rs`)
+- Play all cells or single cell
+- Loop toggle, BPM override, elapsed time display
+- SoundFont resolution → spawns playback thread
+- Oscillator fallback if no SoundFont available
 
-- **code cell**: Executes as Python in the Delphi namespace
-- **notation cell**: Pure notation → parsed, played via SoundFont.
-  Assigned to a track/instrument via cell metadata pragma:
-  ```
-  # @track melody @program piano @velocity 90
-  C4:q E4:q G4:q C5:h
-  ```
-- **markdown cell**: Notes, headings, documentation
+#### Export (`export.rs`)
+- MIDI or WAV export dialog
+- Groups events by channel into tracks
+- Uses SoundFont for WAV rendering
 
-### 4. Syntax Highlighting
-Reuse `DelphiLexer` from repl.py inside `prompt_toolkit` `BufferControl`.
-Notes = cyan, chords = green, dynamics = yellow, bar lines = dim.
+#### Mixer (`mixer.rs`)
+- Master gain + per-track faders
+- Pan, mute, solo, reverb, delay controls per track
+- Per-track gain applied during render
 
-### 5. Key Bindings
+#### Piano Roll (`piano_roll.rs`)
+- Read-only note visualization
+- Zoom X/Y, scroll, snap grid
+- Color-coded by track, beat grid lines
 
-| Key | Action |
-|-----|--------|
-| F5 / Ctrl+Enter | Run current cell |
-| F6 | Run all cells |
-| F7 / Ctrl+B | Insert cell below |
-| F8 | Delete cell (confirm) |
-| F9 | Export menu (MIDI/WAV/script) |
-| F10 / Ctrl+S | Save notebook |
-| Ctrl+Up/Down | Navigate between cells |
-| Ctrl+Shift+Up/Down | Reorder cells |
-| Tab | Autocomplete |
-| Ctrl+P | Replay last output |
-| Ctrl+Q | Quit |
+#### Theory Explorer (`theory.rs`)
+- Interactive chord and scale builder
+- Circle of Fifths visualization
+- Keyboard display
 
-### 6. Multi-Track Workflow
-Each notation cell has metadata: instrument, velocity, channel.
-"Run All" builds a Song from all notation cells (each → a track).
-A final "mixdown" code cell can customize effects, add structure.
+#### Visualizer (`visualizer.rs`)
+- Modes: NowPlaying (active notes), Waveform, Spectrum, Both
+- Synthetic waveform generated from active MIDI events
 
-### 7. File Format (.dstudio)
+#### SoundFont Manager (`soundfont.rs`)
+- Auto-discovery: `~/.delphi/soundfonts/`, system paths, env var
+- Prefers "GeneralUser" SoundFont
+
+#### Scripting (`scripting.rs`)
+- Rhai expression evaluation
+- Built-in functions: `note_to_midi()`, `chord_notes()`, `scale_notes()`
+- Studio commands: `set_tempo()`, `add_cell()`, etc.
+
+### File Format (.dstudio)
 ```json
 {
-  "version": 1,
   "title": "My Song",
   "settings": {"tempo": 120, "key": "C major", "time_sig": "4/4"},
   "cells": [
     {
       "type": "notation",
       "source": "C4:q E4:q G4:h",
-      "meta": {"track": "melody", "program": "piano", "velocity": 90}
-    },
-    {"type": "code", "source": "song.play()"}
+      "meta": {"label": "Melody", "program": "piano", "velocity": 90, "channel": 0}
+    }
   ]
 }
 ```
 
-### 8. Status Bar
-Always visible: project name, tempo, key, time sig, cell #/total, last action.
+### Dependencies
+- `egui` / `eframe` — immediate-mode GUI framework
+- `delphi-core` — notation parser, project model, music types
+- `delphi-engine` — SoundFont playback, WAV rendering
+- `delphi-midi` — MIDI export
 
-### 9. Output Pane (per cell)
-- Notation: note count, bar count, duration, parse errors
-- Code: return value or print output
-- Playback: "Playing…" with elapsed time, Ctrl+C to stop
+## Future Enhancements
 
-## Implementation Phases
+### Editable Piano Roll
+- Click/drag to add, move, resize notes
+- Snap to grid (beat, half-beat, triplet)
+- Selection + copy/paste
+- Feeds back into notation cells
 
-### Phase 1: Core shell (~400 lines)
-- Cell + Notebook models
-- Save/load .dstudio files
-- prompt_toolkit Application with HSplit layout
-- Cell navigation (focus up/down)
-- Basic multiline text editing within cells
-- Status bar + toolbar
+### Track-Level Audio Mixing
+- Real DSP gain per track (not just CC messages)
+- Master bus with gain + limiter
 
-### Phase 2: Execution (~200 lines)
-- Run cell (code → exec, notation → parse + play)
-- Run all (build Song from notation cells)
-- Output display below each cell
-- Error display with red highlighting
+### Undo/Redo
+- Cell-level or global undo stack
+- History panel
 
-### Phase 3: Editor features (~200 lines)
-- Syntax highlighting via DelphiLexer
-- Autocomplete (instruments, scales, functions)
-- Cell metadata pragmas (@track, @program)
-- Add / delete / reorder cells
-- Cell type switching (code ↔ notation ↔ markdown)
+### MIDI Input
+- Real-time recording from MIDI keyboard via `midir`
+- Quantize + convert to notation
 
-### Phase 4: Polish (~200 lines)
-- Export: MIDI, WAV, flatten to .delphi script
-- Cell collapse/expand
-- Undo per cell
-- Project integration: `delphi studio my-song` reads delphi.toml
-
-## CLI Integration
-```bash
-delphi studio                    # New empty notebook
-delphi studio my-song            # Open project as notebook
-delphi studio song.dstudio       # Open saved notebook file
-```
-
-## Dependencies
-- `prompt_toolkit` (already required) — Application, HSplit, VSplit, Buffer, etc.
-- `pygments` (already used) — DelphiLexer for highlighting
-- No new dependencies needed.
-
-## What This Enables
-A skilled user can:
-1. `delphi studio` → opens a blank notebook
-2. Cell 1: set tempo, key, time signature
-3. Cell 2: write melody notation (highlighted, with autocomplete)
-4. Cell 3: write bass line
-5. Cell 4: write drum pattern
-6. F5 on any cell → hear that part solo
-7. F6 → hear the full mix (all cells → Song → play)
-8. Tweak velocities, effects, structure
-9. F9 → export MIDI + WAV
-10. All without leaving the terminal
+### Arrangement View
+- Section blocks (verse, chorus, bridge) on a timeline
+- Drag to reorder, repeat via markers
+- Full song structure visualization

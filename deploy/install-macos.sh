@@ -2,9 +2,9 @@
 # ─────────────────────────────────────────────────────────────
 # Delphi — macOS Installer
 #
-#   1. Find or create a Python venv
-#   2. pip install the pre-built wheel (Rust binary included)
-#   3. Create a launcher on PATH
+# Downloads and installs both native binaries:
+#   • delphi        (CLI: export, play, info, new)
+#   • delphi-studio (native GUI)
 #
 # CoreAudio is built-in on every Mac — no extra audio libs.
 #
@@ -13,105 +13,51 @@
 # ─────────────────────────────────────────────────────────────
 set -euo pipefail
 
-DELPHI_VENV="${DELPHI_VENV:-$HOME/.local/share/delphi/venv}"
 DELPHI_VERSION="${DELPHI_VERSION:-}"
 GITHUB_REPO="SharkySeph/delphi"
-LAUNCHER_DIR="$HOME/.local/bin"
+INSTALL_DIR="$HOME/.local/bin"
 
-# ── Find Python 3.10+ ───────────────────────────────────────
-find_python() {
-    for py in python3 python; do
-        if command -v "$py" &>/dev/null; then
-            local ver
-            ver="$($py -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')" || continue
-            local maj="${ver%%.*}" min="${ver##*.}"
-            if (( maj > 3 || (maj == 3 && min >= 10) )); then
-                echo "$py"; return 0
-            fi
-        fi
-    done
-    echo "Error: Python 3.10+ is required." >&2
-    echo "  Install via: brew install python@3.12" >&2
-    echo "  Or download: https://www.python.org/downloads/" >&2
-    exit 1
-}
-
-PYTHON="$(find_python)"
-echo "⚙  Using $PYTHON ($($PYTHON --version))"
-
-# ── Create venv ──────────────────────────────────────────────
-if [[ ! -d "$DELPHI_VENV" ]]; then
-    echo "⚙  Creating venv → $DELPHI_VENV"
-    mkdir -p "$(dirname "$DELPHI_VENV")"
-    $PYTHON -m venv "$DELPHI_VENV"
-fi
-source "$DELPHI_VENV/bin/activate"
-
-# ── Install Delphi from GitHub Releases ──────────────────────
-# Note: "delphi" on PyPI is a different package — always use GitHub Releases
-echo "⚙  Installing Delphi..."
+# ── Resolve latest version ──────────────────────────────────
 if [[ -z "$DELPHI_VERSION" ]]; then
     DELPHI_VERSION="$(curl -sSf "https://api.github.com/repos/${GITHUB_REPO}/releases/latest" \
-        | $PYTHON -c 'import sys,json; print(json.load(sys.stdin)["tag_name"].lstrip("v"))' 2>/dev/null)" || {
-        echo "Error: Could not find a release. Set DELPHI_VERSION=0.7.0" >&2; exit 1
+        | grep '"tag_name"' | sed 's/.*"v\(.*\)".*/\1/')" || {
+        echo "Error: Could not find a release. Set DELPHI_VERSION=0.8.0" >&2; exit 1
     }
 fi
 ARCH="$(uname -m)"
-[[ "$ARCH" == "arm64" ]] && WHL_ARCH="arm64" || WHL_ARCH="x86_64"
-WHEEL_URL="$(curl -sSf "https://api.github.com/repos/${GITHUB_REPO}/releases/tags/v${DELPHI_VERSION}" \
-    | $PYTHON -c "
-import sys, json
-for a in json.load(sys.stdin).get('assets', []):
-    if a['name'].endswith('.whl') and 'macosx' in a['name'] and '${WHL_ARCH}' in a['name']:
-        print(a['browser_download_url']); break
-" 2>/dev/null)" || true
+[[ "$ARCH" == "arm64" ]] && TAR_ARCH="arm64" || TAR_ARCH="x86_64"
+echo "⚙  Installing Delphi v${DELPHI_VERSION} for macOS ${ARCH}"
 
-if [[ -n "$WHEEL_URL" ]]; then
-    pip install --quiet "$WHEEL_URL"
-    echo "✔  Installed Delphi ${DELPHI_VERSION}"
-else
-    echo "Error: No wheel found for macOS ${ARCH}." >&2
+# ── Download tarball ─────────────────────────────────────────
+TAR_URL="$(curl -sSf "https://api.github.com/repos/${GITHUB_REPO}/releases/tags/v${DELPHI_VERSION}" \
+    | grep '"browser_download_url".*macos.*\.tar\.gz"' | head -1 | sed 's/.*"\(https[^"]*\)".*/\1/')" || true
+
+if [[ -z "$TAR_URL" ]]; then
+    echo "Error: No macOS tarball found for v${DELPHI_VERSION}." >&2
     echo "  https://github.com/${GITHUB_REPO}/releases" >&2
     exit 1
 fi
 
-# ── Install native GUI binary ────────────────────────────────
-GUI_BIN_URL="$(curl -sSf "https://api.github.com/repos/${GITHUB_REPO}/releases/tags/v${DELPHI_VERSION}" \
-    | $PYTHON -c "
-import sys, json
-for a in json.load(sys.stdin).get('assets', []):
-    if 'macos' in a['name'].lower() and a['name'].endswith('.tar.gz') and '${WHL_ARCH}' in a['name']:
-        print(a['browser_download_url']); break
-" 2>/dev/null)" || true
+echo "⚙  Downloading..."
+TMPDIR="$(mktemp -d)"
+curl -sSfL "$TAR_URL" -o "$TMPDIR/delphi.tar.gz"
+tar -xzf "$TMPDIR/delphi.tar.gz" -C "$TMPDIR"
 
-if [[ -n "$GUI_BIN_URL" ]]; then
-    echo "⚙  Installing Delphi Studio (GUI)..."
-    TMPDIR="$(mktemp -d)"
-    curl -sSfL "$GUI_BIN_URL" -o "$TMPDIR/delphi-studio.tar.gz"
-    tar -xzf "$TMPDIR/delphi-studio.tar.gz" -C "$TMPDIR"
-    install -m 755 "$TMPDIR/delphi-studio" "$LAUNCHER_DIR/delphi-studio"
-    rm -rf "$TMPDIR"
-    echo "✔  Installed Delphi Studio GUI"
-else
-    echo "⚠  No GUI binary found for macOS ${ARCH} — CLI/REPL still available"
-fi
+mkdir -p "$INSTALL_DIR"
+find "$TMPDIR" -name "delphi" -type f -perm +111 -exec install -m 755 {} "$INSTALL_DIR/delphi" \;
+find "$TMPDIR" -name "delphi-studio" -type f -perm +111 -exec install -m 755 {} "$INSTALL_DIR/delphi-studio" \;
+rm -rf "$TMPDIR"
+echo "✔  Installed delphi and delphi-studio to $INSTALL_DIR"
 
-# ── Create launcher on PATH ─────────────────────────────────
-mkdir -p "$LAUNCHER_DIR"
-cat > "$LAUNCHER_DIR/delphi" << EOF
-#!/usr/bin/env bash
-exec "$DELPHI_VENV/bin/delphi" "\$@"
-EOF
-chmod +x "$LAUNCHER_DIR/delphi"
-
-if [[ ":$PATH:" != *":$LAUNCHER_DIR:"* ]]; then
+# ── Add to PATH ─────────────────────────────────────────────
+if [[ ":$PATH:" != *":$INSTALL_DIR:"* ]]; then
     PROFILE="$HOME/.zshrc"  # macOS default shell is zsh
     [[ "$(basename "$SHELL")" == "bash" ]] && PROFILE="$HOME/.bash_profile"
-    if ! grep -q "$LAUNCHER_DIR" "$PROFILE" 2>/dev/null; then
-        printf '\nexport PATH="%s:$PATH"\n' "$LAUNCHER_DIR" >> "$PROFILE"
-        echo "⚙  Added $LAUNCHER_DIR to $PROFILE — restart your shell or: source $PROFILE"
+    if ! grep -q "$INSTALL_DIR" "$PROFILE" 2>/dev/null; then
+        printf '\nexport PATH="%s:$PATH"\n' "$INSTALL_DIR" >> "$PROFILE"
+        echo "⚙  Added $INSTALL_DIR to $PROFILE — restart your shell or: source $PROFILE"
     fi
-    export PATH="$LAUNCHER_DIR:$PATH"
+    export PATH="$INSTALL_DIR:$PATH"
 fi
 
 # ── Create data dirs ────────────────────────────────────────
@@ -120,8 +66,7 @@ mkdir -p "$HOME/.local/share/delphi/projects" "$HOME/.delphi/soundfonts"
 # ── Done ─────────────────────────────────────────────────────
 echo ""
 echo "✔  Delphi installed!"
-echo "   Run 'delphi' for the CLI/REPL"
-echo "   Run 'delphi-studio' for the GUI"
-echo "   Venv:       $DELPHI_VENV"
+echo "   delphi          — CLI (export, play, info, new)"
+echo "   delphi-studio   — GUI (editor, piano roll, mixer)"
 echo "   SoundFonts: ~/.delphi/soundfonts/"
 echo "   Projects:   ~/.local/share/delphi/projects/"

@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "title": "Solo - Bass",
+  "settings": { "tempo": 95, "key": "D minor", "time_sig": "4/4" },
+  "cells": [
+    {
+      "type": "notation",
+      "source": "# @instrument acoustic bass\n# @track Bass\n# @velocity 100\n\nD2:h D2:h C2:h C2:h Bb1:h Bb1:h Bb1:h Bb1:h\nA1:h A1:h A1:h A1:h Bb1:h Bb1:h A1:h A1:h\nD2:h D2:h C2:h C2:h Bb1:h Bb1:h Bb1:h Bb1:h\nA1:h A1:h A1:h A1:h Bb1:h Bb1:h A1:h A1:h",
+      "meta": { "label": "Bass", "program": "acoustic bass" }
+    }
+  ]
+}

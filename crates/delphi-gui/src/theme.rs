@@ -1,6 +1,7 @@
 use egui::{Color32, Visuals};
 
 /// Delphi Studio's custom theme — dark with music-inspired accent colors.
+#[allow(dead_code)]
 pub struct DelphiTheme {
     pub bg_primary: Color32,
     pub bg_secondary: Color32,
@@ -65,7 +66,7 @@ impl DelphiTheme {
         ctx.set_visuals(visuals);
 
         // Set default fonts
-        let mut fonts = egui::FontDefinitions::default();
+        let fonts = egui::FontDefinitions::default();
 
         // Ensure monospace is available for the editor
         // (egui includes it by default, but we can customize later)

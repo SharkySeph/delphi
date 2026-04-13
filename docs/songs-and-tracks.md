@@ -1,176 +1,128 @@
 # Songs & Tracks
 
-Build multi-track compositions with the `Song` and `Track` classes. Each track has its own instrument, notation, and effects chain.
+Build multi-track compositions in Delphi using `.dstudio` project files. Each track has its own instrument, notation, MIDI channel, and mixer settings.
 
 ## Table of Contents
 
-- [Creating a Song](#creating-a-song)
-- [Adding Tracks](#adding-tracks)
-- [Track Effects](#track-effects)
-- [Playback & Export](#playback--export)
-- [Extracting Parts](#extracting-parts)
+- [Project Structure](#project-structure)
+- [Creating Tracks](#creating-tracks)
+- [Mixer Settings](#mixer-settings)
+- [Export](#export)
 - [GM Instruments](#gm-instruments)
 
 ---
 
-## Creating a Song
+## Project Structure
 
-```python
-from delphi import Song, Track
+A Delphi project (`.dstudio` file) contains:
 
-song = Song("My Song",
-            tempo=120,          # BPM (default: 120)
-            key="C major",      # Key signature (default: "C major")
-            time_sig=(4, 4))    # Time signature (default: 4/4)
+- **Settings** — Title, tempo, key, time signature, swing, humanize
+- **Cells** — Notation, code, or markdown cells
+- **Tracks** — Per-instrument mixer settings (gain, pan, reverb, delay, mute/solo)
+
+Each notation cell maps to a track. Code cells set global parameters. Markdown cells are notes.
+
+### Creating a Project
+
+In Delphi Studio, use **File → New** or press **Ctrl+N**.
+
+From the CLI:
+
+```bash
+delphi new my_song
 ```
 
-## Adding Tracks
+## Creating Tracks
 
-There are two ways to add tracks:
+Each notation cell becomes a track. Use pragmas to configure the instrument and channel:
 
-### Shorthand (chain-friendly)
+```
+# @track Melody
+# @instrument violin
+# @velocity 90
 
-```python
-song.track("melody",
-           "C4:q E4:q G4:q C5:h",
-           program="piano",       # Instrument name or MIDI program number
-           velocity=90)           # Default velocity (0-127)
-
-song.track("bass",
-           "C2:h G2:h",
-           program="acoustic bass",
-           channel=None,          # Auto-assigned (drums get channel 9)
-           velocity=65)
+G4:q A4:q B4:q D5:h
+F#4:q G4:q A4:q B4:h
 ```
 
-### Explicit Track objects
+```
+# @track Bass
+# @instrument acoustic bass
+# @velocity 65
 
-```python
-melody = Track("Melody",
-               notation="C4:q E4:q G4:q C5:h",
-               program="piano",
-               velocity=90)
-
-song.add_track(melody)
+C2:h G2:h F2:h C2:h
 ```
 
-Both `Song.track()` and `Song.add_track()` return the Song, so you can chain calls:
+```
+# @track Drums
+# @channel 9
 
-```python
-song = (Song("Jazz Tune", tempo=140)
-    .track("piano", "| Cmaj7 | Am7 | Dm7 | G7 |", program="piano")
-    .track("bass", "C2:h A2:h D2:h G2:h", program="acoustic bass")
-    .track("drums", "bd(3,8) sd(2,8) hh(5,8)", program=0, channel=9))
+{bd(3,8) sd(2,8) hh(5,8)}
 ```
 
-## Track Effects
+MIDI channels are auto-assigned to avoid conflicts. Channel 9 is reserved for drums.
 
-Tracks support a chainable effects API. All effect methods return the Track for chaining.
+### Chaining Multiple Cells
 
-### Volume & Panning
+Use a code cell at the top to set global parameters:
 
-```python
-track = Track("Lead", "C4:q E4:q G4:q", program="piano")
-
-track.gain(0.8)       # Volume: 0.0 (silent) to 2.0 (double), default 1.0
-track.pan(0.3)        # Stereo: 0.0 (left) to 1.0 (right), 0.5 = center
+```
+tempo(110)
+key("G major")
+time_sig(4, 4)
+swing(0.2)
 ```
 
-### Reverb & Delay
+Then add notation cells for each part. Press **F5** in Delphi Studio or use `delphi play` from the CLI.
 
-```python
-track.reverb(0.4)               # Reverb amount: 0.0 to 1.0
-track.delay(0.3, time=0.25)     # Delay amount + time in seconds
-```
+## Mixer Settings
 
-### ADSR Envelope
+In Delphi Studio, the **Tracks** panel provides per-track controls:
 
-Shape the amplitude of each note with attack, decay, sustain level, and release time.
+| Control | Range | Description |
+|---------|-------|-------------|
+| **Gain** | 0.0 – 1.5 | Volume level |
+| **Pan** | 0.0 – 1.0 | Stereo position (0.0=left, 0.5=center, 1.0=right) |
+| **Reverb** | 0.0 – 1.0 | Reverb send amount |
+| **Delay** | 0.0 – 1.0 | Delay send amount |
+| **Mute** | on/off | Silence the track |
+| **Solo** | on/off | Solo the track (mutes all others) |
 
-```python
-track.adsr(
-    attack=0.01,    # Attack time in seconds
-    decay=0.1,      # Decay time in seconds
-    sustain=0.8,    # Sustain level (0-1)
-    release=0.3     # Release time in seconds
-)
-```
-
-### Pitch Manipulation
-
-```python
-track.transpose(7)      # Shift all notes up 7 semitones (a 5th)
-track.transpose(-12)    # Shift down one octave
-track.octave_up()       # Shorthand for transpose(12)
-track.octave_down()     # Shorthand for transpose(-12)
-track.rev()             # Reverse the entire pattern
-```
-
-### Chaining Effects
-
-All effect methods return the Track, so they can be chained:
-
-```python
-melody = (Track("Lead", "C4:q E4:q G4:h", program="piano")
-    .gain(0.9)
-    .pan(0.6)
-    .reverb(0.3)
-    .delay(0.2, time=0.125))
-
-bass = (Track("Bass", "C2:h G2:h", program="acoustic bass")
-    .gain(1.1)
-    .pan(0.4)
-    .octave_down())
-```
+These settings are persisted in the `.dstudio` file and applied during both playback and export.
 
 ### Effects in MIDI Export
 
-When exporting to MIDI, the following effects are written as MIDI Control Change events:
+Mixer settings are written as MIDI Control Change events:
 
 | Effect | MIDI CC | Range |
 |--------|---------|-------|
-| `pan()` | CC #10 | 0-127 (0.5 → 64) |
-| `gain()` | CC #7 | 0-127 (1.0 → 100) |
-| `reverb()` | CC #91 | 0-127 |
-| `delay()` | CC #93 | 0-127 |
+| Pan | CC #10 | 0–127 (0.5 → 64) |
+| Gain | CC #7 | 0–127 (1.0 → 100) |
+| Reverb | CC #91 | 0–127 |
+| Delay | CC #93 | 0–127 |
 
-## Playback & Export
+## Export
 
-Delphi uses **SoundFont playback by default** for all instruments and drums. The built-in oscillator synth is only used as a fallback when no SoundFont is available. Run `ensure_soundfont()` to download the default SoundFont.
+### From Delphi Studio
 
-Drum tracks are automatically routed to MIDI channel 9 — no manual channel assignment needed.
+Use **File → Export** and choose MIDI or WAV format.
 
-```python
-# Play through speakers (SoundFont is default)
-song.play()
+### From the CLI
 
-# Render to WAV file
-song.render("output.wav")
+```bash
+# Export both MIDI and WAV
+delphi export my_song.dstudio --format both --output ./out/
 
-# Export MIDI file (Format 1, multi-track)
-song.export("output.mid")
-```
+# Export MIDI only
+delphi export my_song.dstudio --format midi
 
-## Extracting Parts
-
-Pull out a single track as its own Song:
-
-```python
-# Extract just the melody track
-melody_song = song.extract("Melody")
-melody_song.play()
-melody_song.export("melody_only.mid")
+# Export WAV with a specific SoundFont
+delphi export my_song.dstudio --format wav --sf ~/soundfonts/my_font.sf2
 ```
 
 ## GM Instruments
 
-Delphi supports all 128 General MIDI instruments. Use the string name (case-insensitive) or MIDI program number.
-
-```python
-Track("Lead", notation, program="piano")           # By name
-Track("Lead", notation, program=0)                  # By number
-Track("Drums", notation, program=0, channel=9)      # Drum channel
-```
+Delphi supports all 128 General MIDI instruments. Use the string name (case-insensitive) in the `@instrument` or `@program` pragma.
 
 ### Instrument List
 
@@ -189,54 +141,45 @@ Track("Drums", notation, program=0, channel=9)      # Drum channel
 | **Synth** | `square lead` (80), `saw lead` / `synth lead` (81), `pad` (88), `warm pad` (89), `polysynth` (90) |
 | **World** | `sitar` (104), `banjo` (105), `shamisen` (106), `koto` (107), `kalimba` (108), `bagpipe` (109), `fiddle` (110) |
 
-### In the REPL
-
-Type `instruments` to see the full list:
-
-```
-🎵 > instruments
-```
-
 ---
 
 ## Full Example
 
-```python
-from delphi import Song, Track, ensure_soundfont
+A complete multi-track project:
 
-ensure_soundfont()
+**Code cell:**
+```
+tempo(90)
+key("D minor")
+time_sig(4, 4)
+swing(0.1)
+humanize(0.05)
+```
 
-song = Song("Chill Beat",
-            tempo=90,
-            key="D minor",
-            time_sig=(4, 4))
+**Notation cell: Keys**
+```
+# @instrument electric piano
+# @track Keys
+# @velocity 70
 
-# Rhodes piano — main chords
-song.add_track(
-    Track("Keys", """
-        | Dm7 | Am7 | Bbmaj7 | A7 |
-    """, program="electric piano", velocity=70)
-    .pan(0.4)
-    .reverb(0.5)
-)
+| Dm7 | Am7 | Bbmaj7 | A7 |
+```
 
-# Bass line
-song.add_track(
-    Track("Bass", """
-        D2:q . D2:8 D2:8  A2:q . A2:8 A2:8
-        Bb2:q . Bb2:8 Bb2:8  A2:q . A2:8 A2:8
-    """, program="fretless bass", velocity=75)
-    .gain(1.1)
-    .pan(0.5)
-)
+**Notation cell: Bass**
+```
+# @instrument fretless bass
+# @track Bass
+# @velocity 75
 
-# Drums — Euclidean rhythms
-song.add_track(
-    Track("Drums", """
-        bd(3,8) sd(2,8) hh(5,8) oh(1,8)
-    """, channel=9, velocity=80)
-)
+D2:q . D2:8 D2:8  A2:q . A2:8 A2:8
+Bb2:q . Bb2:8 Bb2:8  A2:q . A2:8 A2:8
+```
 
-song.play()
-song.export("chill_beat.mid")
+**Notation cell: Drums**
+```
+# @channel 9
+# @track Drums
+# @velocity 80
+
+{bd(3,8) sd(2,8) hh(5,8) oh(1,8)}
 ```

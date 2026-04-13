@@ -1,0 +1,14 @@
+[package]
+name = "delphi-cli"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "delphi"
+path = "src/main.rs"
+
+[dependencies]
+delphi-core = { workspace = true }
+delphi-midi = { path = "../delphi-midi" }
+delphi-engine = { path = "../delphi-engine" }
+ctrlc = "3"

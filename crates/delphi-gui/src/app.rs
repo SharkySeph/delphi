@@ -42,6 +42,7 @@ pub enum SidePanel {
 
 /// Top-level application state.
 pub struct DelphiApp {
+    #[allow(dead_code)]
     pub theme: DelphiTheme,
 
     // Core state
@@ -250,86 +251,18 @@ impl DelphiApp {
     }
 
     fn load_example_dstudio(&mut self) {
-        self.studio = StudioState::new();
-        let json = EXAMPLE_SHOWCASE;
-        if let Ok(v) = serde_json::from_str::<serde_json::Value>(json) {
-            // Use load_from_python_format logic via a temp file approach
-            // Or parse inline — simpler to just parse the JSON directly
-            self.studio.settings.title = v["title"].as_str().unwrap_or("Showcase").to_string();
-            if let Some(s) = v.get("settings") {
-                self.studio.settings.bpm = s["tempo"].as_f64().unwrap_or(120.0);
-                if let Some(k) = s["key"].as_str() {
-                    self.studio.settings.key_name = k.to_string();
-                }
+        // Write to a temp file and use the standard load() path so that
+        // channel assignment, track building, and pragma parsing all go
+        // through one code path.
+        let tmp = std::env::temp_dir().join("_delphi_showcase.dstudio");
+        if std::fs::write(&tmp, EXAMPLE_SHOWCASE).is_ok() {
+            let path = tmp.clone();
+            self.studio = StudioState::new();
+            if self.studio.load(&path).is_ok() {
+                self.project_path = None;
             }
-            self.studio.cells.clear();
-            if let Some(cells) = v["cells"].as_array() {
-                for c in cells {
-                    let mut cell = match c["type"].as_str().unwrap_or("notation") {
-                        "markdown" => crate::studio::Cell::new_markdown(),
-                        "code" => crate::studio::Cell::new_code(),
-                        _ => crate::studio::Cell::new_notation(),
-                    };
-                    cell.source = c["source"].as_str().unwrap_or("").to_string();
-                    if let Some(meta) = c.get("meta") {
-                        if let Some(label) = meta["label"].as_str() {
-                            cell.label = label.to_string();
-                        }
-                        if let Some(prog) = meta["program"].as_str() {
-                            cell.instrument = prog.to_string();
-                        }
-                        if let Some(ch) = meta["channel"].as_u64() {
-                            cell.channel = ch as u8;
-                        }
-                    }
-                    // Also parse pragmas from source
-                    for line in cell.source.lines() {
-                        let trimmed: &str = line.trim();
-                        if let Some(rest) = trimmed.strip_prefix("# @instrument ") {
-                            cell.instrument = rest.to_string();
-                        } else if let Some(rest) = trimmed.strip_prefix("# @channel ") {
-                            if let Ok(ch) = rest.parse::<u8>() {
-                                cell.channel = ch;
-                            }
-                        } else if let Some(rest) = trimmed.strip_prefix("# @velocity ") {
-                            if let Ok(v) = rest.parse::<u8>() {
-                                cell.velocity = v;
-                            }
-                        } else if let Some(rest) = trimmed.strip_prefix("# @track ") {
-                            cell.label = rest.to_string();
-                        }
-                    }
-                    self.studio.cells.push(cell);
-                }
-            }
-            // Build tracks from cells
-            for cell in &self.studio.cells {
-                if cell.cell_type == "markdown" || cell.source.trim().is_empty() {
-                    continue;
-                }
-                let name = if cell.label.is_empty() {
-                    cell.instrument.clone()
-                } else {
-                    cell.label.clone()
-                };
-                if name.is_empty() {
-                    continue;
-                }
-                if !self.studio.tracks.iter().any(|t| t.name == name) {
-                    self.studio.tracks.push(crate::studio::TrackState {
-                        name,
-                        instrument: cell.instrument.clone(),
-                        program: crate::studio::gm_program_from_name(&cell.instrument),
-                        channel: cell.channel,
-                        gain: 1.0,
-                        pan: 0.5,
-                        muted: false,
-                        solo: false,
-                    });
-                }
-            }
+            let _ = std::fs::remove_file(&tmp);
         }
-        self.project_path = None;
     }
 }
 
@@ -396,6 +329,9 @@ const EXAMPLE_SHOWCASE: &str = include_str!("../../../examples/showcase.dstudio"
 
 impl eframe::App for DelphiApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // Auto-stop when playback thread finishes
+        self.transport.poll_done();
+
         // Keyboard shortcuts
         ctx.input(|i| {
             // F5: Play
@@ -549,8 +485,29 @@ impl eframe::App for DelphiApp {
                 );
             });
             ui.separator();
+
+            // Compute active token highlights for Strudel-style playback highlighting
+            let active_highlights: Vec<Vec<(usize, usize)>> = if self.transport.is_playing() {
+                let elapsed = self.transport.elapsed_secs();
+                let bpm = self.transport.bpm_override.unwrap_or(self.studio.settings.bpm);
+                let tick = (elapsed * bpm / 60.0 * 480.0) as u32;
+                let all_spans = self.studio.compute_all_token_spans();
+                all_spans
+                    .iter()
+                    .map(|cell_spans| {
+                        cell_spans
+                            .iter()
+                            .filter(|s| s.tick_start <= tick && tick < s.tick_end)
+                            .map(|s| (s.byte_start, s.byte_end))
+                            .collect()
+                    })
+                    .collect()
+            } else {
+                Vec::new()
+            };
+
             match self.center_panel {
-                CenterPanel::Editor => self.editor.ui(ui, &mut self.studio),
+                CenterPanel::Editor => self.editor.ui(ui, &mut self.studio, &active_highlights),
                 CenterPanel::PianoRoll => self.piano_roll.ui(ui, &mut self.studio),
             }
         });
@@ -577,11 +534,14 @@ impl eframe::App for DelphiApp {
         if let Some(idx) = self.editor.last_run_cell.take() {
             if idx < self.studio.cells.len() {
                 let cell = &self.studio.cells[idx];
+                let key = &self.studio.settings.key_name;
+                let key_opt = if key.is_empty() { None } else { Some(key.as_str()) };
                 let (events, warnings) = crate::studio::parse_notation_with_diagnostics(
                     &cell.source,
                     cell.channel,
                     crate::studio::gm_program_from_name(&cell.instrument),
                     cell.velocity,
+                    key_opt,
                 );
                 let bars = if events.is_empty() {
                     0.0

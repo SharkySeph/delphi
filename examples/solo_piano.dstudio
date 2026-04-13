@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "title": "Solo - Piano Chords",
+  "settings": { "tempo": 95, "key": "D minor", "time_sig": "4/4" },
+  "cells": [
+    {
+      "type": "notation",
+      "source": "# @instrument piano\n# @track Piano Chords\n# @velocity 75\n\n| Dm | Am/C | Bb | Gm/Bb |\n| Dm/A | Am | Bb | A7 |\n| Dm | Am/C | Bb | Gm/Bb |\n| Dm/A | Am | Bbmaj7 | A7 |",
+      "meta": { "label": "Piano Chords", "program": "piano" }
+    }
+  ]
+}

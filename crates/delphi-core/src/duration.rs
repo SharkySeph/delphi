@@ -71,6 +71,8 @@ impl Duration {
             "h.." => Some(Self::HALF.double_dotted()),
             "q.." => Some(Self::QUARTER.double_dotted()),
             "8.." => Some(Self::EIGHTH.double_dotted()),
+            "16.." => Some(Self::SIXTEENTH.double_dotted()),
+            "32.." => Some(Self::THIRTY_SECOND.double_dotted()),
             // Triplet
             "wt" => Some(Self::WHOLE.triplet()),
             "ht" => Some(Self::HALF.triplet()),

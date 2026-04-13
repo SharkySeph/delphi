@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "title": "Solo - Violin Melody",
+  "settings": { "tempo": 95, "key": "D minor", "time_sig": "4/4" },
+  "cells": [
+    {
+      "type": "notation",
+      "source": "# @instrument violin\n# @track Melody\n# @velocity 85\n\nr:h D5:q!mp F5:q\nA5:h!mf G5:8 F5:8 E5:q\nD5:q..acc C5:8 Bb4:q A4:q\nBb4:h.ten A4:q!p r:q\n\nD5:q F5:q A5:h!f\nG5:q.tr F5:8 E5:8 D5:h\nC5:q!mf D5:q Bb4:h\nA4:w!p\n\nD5:8!mp E5:8 F5:q A5:h!mf\nG5:q F5:8.stac E5:8.stac D5:h\nC5:q!f D5:q.grace Bb4:q A4:q\nBb4:h A4:h!p\n\nA5:q.ferm!f G5:8 F5:8 E5:q D5:q\nC5:q D5:q E5:h!mf\nF5:q!mp E5:q D5:h\nD5:w!p",
+      "meta": { "label": "Melody", "program": "violin" }
+    }
+  ]
+}

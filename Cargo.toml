@@ -4,12 +4,12 @@ members = [
     "crates/delphi-core",
     "crates/delphi-midi",
     "crates/delphi-engine",
-    "crates/delphi-py",
     "crates/delphi-gui",
+    "crates/delphi-cli",
 ]
 
 [workspace.package]
-version = "0.7.0"
+version = "0.8.0"
 edition = "2021"
 license = "MIT"
 

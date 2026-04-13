@@ -86,6 +86,32 @@ impl MixerPanel {
                             }
                         });
 
+                        // Reverb / Delay knobs
+                        ui.horizontal(|ui| {
+                            ui.label(
+                                egui::RichText::new("Rv")
+                                    .small()
+                                    .color(egui::Color32::from_rgb(150, 150, 150)),
+                            );
+                            ui.add(
+                                egui::Slider::new(&mut track.reverb, 0.0..=1.0)
+                                    .show_value(false)
+                                    .text(""),
+                            );
+                        });
+                        ui.horizontal(|ui| {
+                            ui.label(
+                                egui::RichText::new("Dl")
+                                    .small()
+                                    .color(egui::Color32::from_rgb(150, 150, 150)),
+                            );
+                            ui.add(
+                                egui::Slider::new(&mut track.delay, 0.0..=1.0)
+                                    .show_value(false)
+                                    .text(""),
+                            );
+                        });
+
                         // Instrument label
                         ui.label(
                             egui::RichText::new(&track.instrument)

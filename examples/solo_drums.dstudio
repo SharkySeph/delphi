@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "title": "Solo - Drums",
+  "settings": { "tempo": 95, "key": "D minor", "time_sig": "4/4" },
+  "cells": [
+    {
+      "type": "notation",
+      "source": "# @instrument drums\n# @track Drums\n# @channel 9\n\n{bd(3,8) sd(2,8) hh(5,8)}\n{bd(3,8) sd(2,8) hh(5,8)}\n{bd(3,8) sd(2,8) hh(5,8)}\n{bd(3,8) sd(2,8) hh(5,8) crash:w}\n{bd(3,8) sd(2,8) hh(5,8)}\n{bd(3,8) sd(2,8) hh(5,8)}\n{bd(3,8) sd(2,8) hh(5,8)}\n{bd(3,8) sd(2,8) ride(5,8) crash:w}",
+      "meta": { "label": "Drums", "channel": 9 }
+    }
+  ]
+}

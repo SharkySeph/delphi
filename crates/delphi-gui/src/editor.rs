@@ -215,7 +215,7 @@ impl EditorState {
         }
     }
 
-    pub fn ui(&mut self, ui: &mut egui::Ui, studio: &mut StudioState) {
+    pub fn ui(&mut self, ui: &mut egui::Ui, studio: &mut StudioState, active_highlights: &[Vec<(usize, usize)>]) {
         let cell_count = studio.cells.len();
         if cell_count == 0 {
             ui.centered_and_justified(|ui| {
@@ -248,8 +248,11 @@ impl EditorState {
             let mut to_run: Option<usize> = None;
             let mut to_move_up: Option<usize> = None;
             let mut to_move_down: Option<usize> = None;
+            let mut needs_channel_reassign = false;
 
             let cell_count_inner = studio.cells.len();
+            let editor_key_name = studio.settings.key_name.clone();
+            let editor_key_opt: Option<&str> = if editor_key_name.is_empty() { None } else { Some(&editor_key_name) };
 
             for (idx, cell) in studio.cells.iter_mut().enumerate() {
                 let is_active = idx == self.active_cell;
@@ -300,6 +303,7 @@ impl EditorState {
                                     self.cell_hashes[idx] = 0;
                                 }
                                 cell.output.clear();
+                                needs_channel_reassign = true;
                             }
                         }
 
@@ -331,9 +335,14 @@ impl EditorState {
                             );
                         }
                     } else {
-                    // Code editor with syntax highlighting
+                    // Code editor with syntax highlighting (with playback token glow)
+                    let cell_hl: &[(usize, usize)] = if idx < active_highlights.len() {
+                        &active_highlights[idx]
+                    } else {
+                        &[]
+                    };
                     let mut layouter = |ui: &egui::Ui, text: &str, wrap_width: f32| {
-                        let layout_job = highlight_notation(ui, text, wrap_width);
+                        let layout_job = highlight_notation(ui, text, wrap_width, cell_hl);
                         ui.fonts(|f| f.layout_job(layout_job))
                     };
                     let editor_response = ui.add(
@@ -361,12 +370,13 @@ impl EditorState {
                         let new_hash = hasher.finish();
                         if new_hash != self.cell_hashes[idx] {
                             self.cell_hashes[idx] = new_hash;
-                            if cell.cell_type != "markdown" && !cell.source.trim().is_empty() {
+                            if cell.cell_type == "notation" && !cell.source.trim().is_empty() {
                                 let (_events, mut warnings) = crate::studio::parse_notation_with_diagnostics(
                                     &cell.source,
                                     cell.channel,
                                     crate::studio::gm_program_from_name(&cell.instrument),
                                     cell.velocity,
+                                    editor_key_opt,
                                 );
                                 // Warn if cell instrument is unrecognized
                                 if !cell.instrument.is_empty()
@@ -524,6 +534,7 @@ impl EditorState {
                 if self.active_cell >= studio.cells.len() && !studio.cells.is_empty() {
                     self.active_cell = studio.cells.len() - 1;
                 }
+                needs_channel_reassign = true;
             }
 
             if let Some(idx) = to_run {
@@ -541,18 +552,28 @@ impl EditorState {
                     self.active_cell = idx + 1;
                 }
             }
+
+            if needs_channel_reassign {
+                studio.auto_assign_channels();
+            }
         });
     }
 }
 
 /// Produce a syntax-highlighted LayoutJob for .delphi notation.
-fn highlight_notation(ui: &egui::Ui, text: &str, wrap_width: f32) -> LayoutJob {
+/// When `highlights` is non-empty, tokens whose byte range overlaps an active
+/// highlight get a colored background glow (Strudel-style playback indicator).
+fn highlight_notation(ui: &egui::Ui, text: &str, wrap_width: f32, highlights: &[(usize, usize)]) -> LayoutJob {
     let mut job = LayoutJob::default();
     job.wrap.max_width = wrap_width;
 
     let font = FontId::monospace(14.0);
     let style = ui.style();
     let default_color = style.visuals.text_color();
+
+    let highlight_bg = Color32::from_rgba_premultiplied(86, 182, 194, 55); // Teal glow
+
+    let mut line_byte_start: usize = 0;
 
     for (line_idx, line) in text.split('\n').enumerate() {
         if line_idx > 0 {
@@ -570,9 +591,31 @@ fn highlight_notation(ui: &egui::Ui, text: &str, wrap_width: f32) -> LayoutJob {
                 job.append(&gap, 0.0, TextFormat::simple(font.clone(), default_color));
             }
 
-            let span: String = line_chars[*start..*end].iter().collect();
+            let span_text: String = line_chars[*start..*end].iter().collect();
             let color = token_color(*kind);
-            job.append(&span, 0.0, TextFormat::simple(font.clone(), color));
+
+            // Check if this token overlaps any active highlight
+            let byte_s = line_byte_start + *start;
+            let byte_e = line_byte_start + *end;
+            let is_lit = !highlights.is_empty()
+                && highlights
+                    .iter()
+                    .any(|(hs, he)| byte_s < *he && byte_e > *hs);
+
+            if is_lit {
+                job.append(
+                    &span_text,
+                    0.0,
+                    TextFormat {
+                        font_id: font.clone(),
+                        color: Color32::WHITE,
+                        background: highlight_bg,
+                        ..Default::default()
+                    },
+                );
+            } else {
+                job.append(&span_text, 0.0, TextFormat::simple(font.clone(), color));
+            }
             pos = *end;
         }
 
@@ -581,6 +624,8 @@ fn highlight_notation(ui: &egui::Ui, text: &str, wrap_width: f32) -> LayoutJob {
             let rest: String = line_chars[pos..].iter().collect();
             job.append(&rest, 0.0, TextFormat::simple(font.clone(), default_color));
         }
+
+        line_byte_start += line.len() + 1; // +1 for '\n'
     }
 
     job

@@ -6,6 +6,9 @@ Delphi uses a concise text-based notation for writing music. This document cover
 
 - [Notes](#notes)
 - [Chords](#chords)
+- [Roman Numeral Chords](#roman-numeral-chords)
+- [Scale Degree Notes](#scale-degree-notes)
+- [Key Changes](#key-changes)
 - [Rests](#rests)
 - [Durations](#durations)
 - [Dynamics](#dynamics)
@@ -142,6 +145,130 @@ Am/E:h!f    A minor over E bass, half note, forte
 | `add11` | Add 11 | `Cadd11` |
 | `add2` | Add 2 | `Cadd2` |
 | `alt` | Altered | `G7alt` |
+
+## Roman Numeral Chords
+
+When your project has a key set (via `key("C major")` in a code cell or `# @key C major` in a notation cell), you can write chords using Roman numerals. Upper case = major, lower case = minor.
+
+```
+I           Tonic major (e.g. C major in key of C)
+IV          Subdominant major
+V           Dominant major
+vi          Submediant minor
+ii          Supertonic minor
+viidim      Diminished seventh chord
+```
+
+### How It Works
+
+Roman numerals resolve relative to the current key's scale:
+
+| Numeral | In C major | In G major |
+|---------|-----------|-----------|
+| `I` | C major | G major |
+| `ii` | D minor | A minor |
+| `IV` | F major | C major |
+| `V` | G major | D major |
+| `vi` | A minor | E minor |
+
+### Quality Suffixes
+
+All chord quality suffixes work with Roman numerals — append them directly:
+
+```
+IVsus4      IV chord with suspended 4th
+V7          V dominant 7th
+viidim7     vii diminished 7th
+IVmaj7      IV major 7th
+iiim7       iii minor 7th
+```
+
+### Octave
+
+Insert an octave number between the numeral and the quality suffix:
+
+```
+IV3sus4     IV chord in octave 3 with sus4
+V5          V chord in octave 5
+```
+
+### Modifiers
+
+Roman numeral chords accept every modifier that letter-name chords do — durations, dynamics, articulations, repeats, and more:
+
+```
+I:h!f       Tonic, half note, forte
+IV:q.stac   Subdominant, quarter note, staccato
+V7:w*2      Dominant 7th, whole note, repeated twice
+I,V         Polyphony — tonic and dominant together
+```
+
+### Bar Notation
+
+Roman numerals work naturally in bar notation:
+
+```
+| I | IV | V | I |
+| I | vi | IV | V7 |
+```
+
+> **Note:** If no key is set, Roman numeral tokens are silently ignored.
+
+## Scale Degree Notes
+
+Write single notes relative to the current key using the `^` prefix followed by a scale degree (1–7).
+
+```
+^1          Root of the key (e.g. C4 in C major)
+^3          Third degree (E4 in C major)
+^5          Fifth degree (G4 in C major)
+^7          Seventh degree (B4 in C major)
+```
+
+### Octave
+
+Append an octave number after the degree:
+
+```
+^13         Root in octave 3 (C3 in C major)
+^55         Fifth in octave 5 (G5 in C major)
+```
+
+### Modifiers
+
+Scale degree notes accept all the same modifiers as regular notes:
+
+```
+^1:q!f      Root, quarter note, forte
+^5:h.stac   Fifth, half note, staccato
+^3:8*4      Third, eighth note, repeated 4 times
+```
+
+> **Note:** If no key is set, scale degree tokens are silently ignored.
+
+## Key Changes
+
+Set or change the key at any point in your notation.
+
+### In Code Cells
+
+```
+key("D minor")
+```
+
+### In Notation Cells
+
+Use the `# @key` pragma on its own line:
+
+```
+# @key C major
+| I | IV | V | I |
+
+# @key G major
+| I | IV | V | I |
+```
+
+The key change takes effect from that line onward, within the same cell. This lets you modulate mid-piece.
 
 ## Rests
 
@@ -532,16 +659,16 @@ kick [hihat hihat] snare     Kick, two eighths hihat, snare
 
 All notation features can be combined freely:
 
-```python
+```
 # Melody with dynamics, articulations, and durations
-play("C4:q!mf E4:8.stac G4:q.acc!f C5:h.ferm")
+C4:q!mf E4:8.stac G4:q.acc!f C5:h.ferm
 
 # Drum pattern with Euclidean rhythms
-play("bd(3,8) sd(2,8) hh(5,8)")
+bd(3,8) sd(2,8) hh(5,8)
 
-# Crescendo into a accented chord
-play("C4:q D4:q cresc(p,f,4) E4:q F4:q G4:q A4.acc:q")
+# Crescendo into an accented chord
+C4:q D4:q cresc(p,f,4) E4:q F4:q G4:q A4.acc:q
 
 # Volta with dynamics
-play("C4!mf D4 [1 E4!f | [2 G4!ff")
+C4!mf D4 [1 E4!f | [2 G4!ff
 ```

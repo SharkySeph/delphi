@@ -4,6 +4,10 @@ pub mod chord;
 pub mod scale;
 pub mod duration;
 pub mod dynamics;
+pub mod event;
+pub mod gm;
+pub mod notation;
+pub mod project;
 
 pub use note::{Note, PitchClass, Accidental};
 pub use interval::Interval;
@@ -11,3 +15,7 @@ pub use chord::{Chord, ChordQuality};
 pub use scale::{Scale, ScaleType, Key};
 pub use duration::{Duration, TimeSignature, Tempo};
 pub use dynamics::{Velocity, Dynamic};
+pub use event::NoteEvent;
+pub use gm::{gm_program_from_name, gm_program_from_name_checked, GM_INSTRUMENT_NAMES, drum_name_to_midi};
+pub use notation::{parse_notation_to_events, parse_notation_to_events_ts, parse_notation_with_diagnostics, TokenSpan};
+pub use project::{Cell, TrackState, ProjectSettings, Project};

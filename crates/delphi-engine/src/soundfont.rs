@@ -13,29 +13,8 @@ use rustysynth::{SoundFont, Synthesizer, SynthesizerSettings};
 
 use delphi_core::duration::Tempo;
 
-/// A scheduled event for the SoundFont renderer.
-/// Unlike AudioEvent, this carries a channel and program for multi-voice rendering.
-#[derive(Debug, Clone)]
-pub struct SfEvent {
-    pub tick: u32,
-    pub midi_note: u8,
-    pub velocity: u8,
-    pub duration_ticks: u32,
-    pub channel: u8,
-    pub program: u8,
-}
-
-impl SfEvent {
-    pub fn start_seconds(&self, tempo: &Tempo) -> f64 {
-        let beats = self.tick as f64 / 480.0;
-        beats * 60.0 / tempo.bpm
-    }
-
-    pub fn duration_seconds(&self, tempo: &Tempo) -> f64 {
-        let beats = self.duration_ticks as f64 / 480.0;
-        beats * 60.0 / tempo.bpm
-    }
-}
+/// Re-export NoteEvent as SfEvent for backward compatibility.
+pub use delphi_core::event::NoteEvent as SfEvent;
 
 /// A raw MIDI message at a specific sample position.
 #[derive(Debug, Clone)]
@@ -65,6 +44,20 @@ pub fn play_with_soundfont_panned(
     stop: &Arc<AtomicBool>,
     channel_pan: &[f32; 16],
 ) -> Result<(), SfPlaybackError> {
+    play_with_soundfont_full(sf_path, events, tempo, stop, channel_pan, &[0.0; 16], &[0.0; 16], &[1.0; 16])
+}
+
+/// Render multi-voice events to the audio output with full per-channel effects.
+pub fn play_with_soundfont_full(
+    sf_path: &Path,
+    events: &[SfEvent],
+    tempo: &Tempo,
+    stop: &Arc<AtomicBool>,
+    channel_pan: &[f32; 16],
+    channel_reverb: &[f32; 16],
+    channel_delay: &[f32; 16],
+    channel_volume: &[f32; 16],
+) -> Result<(), SfPlaybackError> {
     let sample_rate = 44100_u32;
 
     // Load the SoundFont
@@ -81,8 +74,14 @@ pub fn play_with_soundfont_panned(
         .map_err(|e| SfPlaybackError::Synth(format!("{:?}", e)))?;
 
     // Build timed MIDI messages from events
-    let mut messages = build_messages(events, tempo, sample_rate, channel_pan);
-    messages.sort_by_key(|m| (m.sample, m.command)); // CC first, then program changes, then note-on/off
+    let mut messages = build_messages(events, tempo, sample_rate, channel_pan, channel_reverb, channel_delay, channel_volume);
+    messages.sort_by_key(|m| (m.sample, match m.command {
+        0xB0 => 0, // CC (pan, etc.) first
+        0xC0 => 1, // program change second
+        0x80 => 2, // note-off third
+        0x90 => 3, // note-on last
+        c    => c, // fallback
+    }));
 
     // Pre-render to a buffer (offline rendering for precision)
     let total_samples = messages
@@ -120,6 +119,15 @@ pub fn play_with_soundfont_panned(
         );
     }
 
+    // Soft-clip the rendered buffer to prevent harsh digital clipping
+    // when multiple instruments sum above ±1.0.
+    for s in left_buf.iter_mut() {
+        *s = s.tanh();
+    }
+    for s in right_buf.iter_mut() {
+        *s = s.tanh();
+    }
+
     // Play the rendered buffer through cpal
     play_buffer(&left_buf, &right_buf, sample_rate, stop)?;
 
@@ -144,6 +152,20 @@ pub fn render_to_wav_panned(
     output_path: &Path,
     channel_pan: &[f32; 16],
 ) -> Result<(), SfPlaybackError> {
+    render_to_wav_full(sf_path, events, tempo, output_path, channel_pan, &[0.0; 16], &[0.0; 16], &[1.0; 16])
+}
+
+/// Render multi-voice events to a WAV file with full per-channel effects.
+pub fn render_to_wav_full(
+    sf_path: &Path,
+    events: &[SfEvent],
+    tempo: &Tempo,
+    output_path: &Path,
+    channel_pan: &[f32; 16],
+    channel_reverb: &[f32; 16],
+    channel_delay: &[f32; 16],
+    channel_volume: &[f32; 16],
+) -> Result<(), SfPlaybackError> {
     let sample_rate = 44100_u32;
 
     let mut sf_file = File::open(sf_path)
@@ -157,8 +179,14 @@ pub fn render_to_wav_panned(
     let mut synth = Synthesizer::new(&sound_font, &settings)
         .map_err(|e| SfPlaybackError::Synth(format!("{:?}", e)))?;
 
-    let mut messages = build_messages(events, tempo, sample_rate, channel_pan);
-    messages.sort_by_key(|m| (m.sample, m.command));
+    let mut messages = build_messages(events, tempo, sample_rate, channel_pan, channel_reverb, channel_delay, channel_volume);
+    messages.sort_by_key(|m| (m.sample, match m.command {
+        0xB0 => 0, // CC first
+        0xC0 => 1, // program change second
+        0x80 => 2, // note-off third
+        0x90 => 3, // note-on last
+        c    => c,
+    }));
 
     let total_samples = messages
         .iter()
@@ -193,16 +221,35 @@ pub fn render_to_wav_panned(
         );
     }
 
+    // Soft-clip to prevent harsh digital clipping
+    for s in left_buf.iter_mut() {
+        *s = s.tanh();
+    }
+    for s in right_buf.iter_mut() {
+        *s = s.tanh();
+    }
+
     write_wav(output_path, &left_buf, &right_buf, sample_rate)?;
 
     Ok(())
 }
 
-fn build_messages(events: &[SfEvent], tempo: &Tempo, sample_rate: u32, channel_pan: &[f32; 16]) -> Vec<TimedMessage> {
+fn build_messages(events: &[SfEvent], tempo: &Tempo, sample_rate: u32, channel_pan: &[f32; 16], channel_reverb: &[f32; 16], channel_delay: &[f32; 16], channel_volume: &[f32; 16]) -> Vec<TimedMessage> {
     let mut messages = Vec::new();
 
-    // Emit per-channel pan CC#10 messages at sample 0
+    // Emit per-channel CC messages at sample 0
     for ch in 0..16u8 {
+        // CC#7 = Volume
+        let vol_value = (channel_volume[ch as usize].clamp(0.0, 1.0) * 127.0).round() as i32;
+        messages.push(TimedMessage {
+            sample: 0,
+            channel: ch as i32,
+            command: 0xB0,
+            data1: 7,      // CC#7 = volume
+            data2: vol_value,
+        });
+
+        // CC#10 = Pan
         let pan_value = (channel_pan[ch as usize].clamp(0.0, 1.0) * 127.0).round() as i32;
         messages.push(TimedMessage {
             sample: 0,
@@ -210,6 +257,50 @@ fn build_messages(events: &[SfEvent], tempo: &Tempo, sample_rate: u32, channel_p
             command: 0xB0, // control change
             data1: 10,     // CC#10 = pan
             data2: pan_value,
+        });
+
+        // CC#91 = Reverb
+        let reverb_value = (channel_reverb[ch as usize].clamp(0.0, 1.0) * 127.0).round() as i32;
+        if reverb_value > 0 {
+            messages.push(TimedMessage {
+                sample: 0,
+                channel: ch as i32,
+                command: 0xB0,
+                data1: 91,     // CC#91 = reverb
+                data2: reverb_value,
+            });
+        }
+
+        // CC#93 = Chorus/Delay
+        let delay_value = (channel_delay[ch as usize].clamp(0.0, 1.0) * 127.0).round() as i32;
+        if delay_value > 0 {
+            messages.push(TimedMessage {
+                sample: 0,
+                channel: ch as i32,
+                command: 0xB0,
+                data1: 93,     // CC#93 = chorus/delay
+                data2: delay_value,
+            });
+        }
+
+        // CC#1 = Modulation (vibrato) — warm up solo instruments (skip drums ch9)
+        if ch != 9 {
+            messages.push(TimedMessage {
+                sample: 0,
+                channel: ch as i32,
+                command: 0xB0,
+                data1: 1,      // CC#1 = modulation
+                data2: 40,     // moderate vibrato
+            });
+        }
+
+        // CC#11 = Expression — ensure full expression level
+        messages.push(TimedMessage {
+            sample: 0,
+            channel: ch as i32,
+            command: 0xB0,
+            data1: 11,     // CC#11 = expression
+            data2: 127,
         });
     }
 
@@ -416,11 +507,16 @@ mod tests {
             },
         ];
 
-        let messages = build_messages(&events, &tempo, 44100);
-        // Should have: 2 program changes + 2 note-on + 2 note-off = 6
-        assert_eq!(messages.len(), 6);
+        let pan = [0.5_f32; 16];
+        let reverb = [0.0_f32; 16];
+        let delay = [0.0_f32; 16];
+        let volume = [1.0_f32; 16];
+        let messages = build_messages(&events, &tempo, 44100, &pan, &reverb, &delay, &volume);
+        // Should have: 16 pan + 16 volume + 15 modulation (skip ch9) + 16 expression
+        //   + 2 program changes + 2 note-on + 2 note-off = 69
+        assert_eq!(messages.len(), 69);
 
-        // First two should be program changes
+        // Program changes
         let pc: Vec<_> = messages.iter().filter(|m| m.command == 0xC0).collect();
         assert_eq!(pc.len(), 2);
         assert_eq!(pc[0].data1, 0);  // piano

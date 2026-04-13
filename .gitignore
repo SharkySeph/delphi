@@ -1,12 +1,3 @@
 /target
-__pycache__
-*.pyc
-*.pyo
-*.egg-info
 /dist
-/.venv
-*.so
-*.dylib
-*.dll
-.pytest_cache
 *.mid

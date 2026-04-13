@@ -6,7 +6,7 @@ use std::time::Instant;
 use delphi_core::duration::{Duration, Tempo};
 use delphi_core::dynamics::Velocity;
 use delphi_engine::scheduler::AudioEvent;
-use delphi_engine::soundfont::{play_with_soundfont_panned, SfEvent};
+use delphi_engine::soundfont::{play_with_soundfont_full, SfEvent};
 use delphi_engine::AudioOutput;
 
 use crate::studio::StudioState;
@@ -22,6 +22,8 @@ pub struct TransportState {
     pub bpm_override: Option<f64>,
     /// Soundfont status message shown in transport bar.
     sf_status: String,
+    /// Shared flag set by playback thread when it finishes.
+    done_flag: Arc<AtomicBool>,
 }
 
 impl TransportState {
@@ -33,6 +35,17 @@ impl TransportState {
             elapsed_secs: 0.0,
             bpm_override: None,
             sf_status: String::new(),
+            done_flag: Arc::new(AtomicBool::new(false)),
+        }
+    }
+
+    /// Check if the playback thread has finished and auto-stop if so.
+    pub fn poll_done(&mut self) {
+        if self.playing && self.done_flag.load(Ordering::Relaxed) {
+            self.playing = false;
+            if let Some(start) = self.play_start.take() {
+                self.elapsed_secs = start.elapsed().as_secs_f64();
+            }
         }
     }
 
@@ -57,7 +70,10 @@ impl TransportState {
     ) {
         let tempo = self.effective_tempo(studio);
         let pan = studio.channel_pan_map();
-        self.play_events(studio.collect_events_mixed(None, master_gain), tempo, stop_flag, sf_path, pan);
+        let reverb = studio.channel_reverb_map();
+        let delay = studio.channel_delay_map();
+        let volume = studio.channel_volume_map();
+        self.play_events(studio.collect_events_mixed(None, master_gain), tempo, stop_flag, sf_path, pan, reverb, delay, volume);
     }
 
     /// Play a single cell by index.
@@ -71,7 +87,10 @@ impl TransportState {
     ) {
         let tempo = self.effective_tempo(studio);
         let pan = studio.channel_pan_map();
-        self.play_events(studio.collect_events_mixed(Some(cell_idx), master_gain), tempo, stop_flag, sf_path, pan);
+        let reverb = studio.channel_reverb_map();
+        let delay = studio.channel_delay_map();
+        let volume = studio.channel_volume_map();
+        self.play_events(studio.collect_events_mixed(Some(cell_idx), master_gain), tempo, stop_flag, sf_path, pan, reverb, delay, volume);
     }
 
     /// Resolve effective tempo: bpm_override if set, otherwise project tempo.
@@ -89,6 +108,9 @@ impl TransportState {
         stop_flag: &Arc<AtomicBool>,
         sf_path: Option<&PathBuf>,
         channel_pan: [f32; 16],
+        channel_reverb: [f32; 16],
+        channel_delay: [f32; 16],
+        channel_volume: [f32; 16],
     ) {
         if self.playing {
             return;
@@ -107,16 +129,18 @@ impl TransportState {
         };
 
         stop_flag.store(false, Ordering::SeqCst);
+        self.done_flag.store(false, Ordering::SeqCst);
         self.playing = true;
         self.play_start = Some(Instant::now());
 
         let stop = stop_flag.clone();
+        let done = self.done_flag.clone();
         let looping = self.looping;
 
         std::thread::spawn(move || {
             if sf.is_file() {
                 loop {
-                    let _ = play_with_soundfont_panned(&sf, &events, &tempo, &stop, &channel_pan);
+                    let _ = play_with_soundfont_full(&sf, &events, &tempo, &stop, &channel_pan, &channel_reverb, &channel_delay, &channel_volume);
                     if !looping || stop.load(Ordering::Relaxed) {
                         break;
                     }
@@ -136,6 +160,7 @@ impl TransportState {
                 let output = AudioOutput::new();
                 let _ = output.play_events(&audio_events, &tempo, &stop);
             }
+            done.store(true, Ordering::SeqCst);
         });
     }
 

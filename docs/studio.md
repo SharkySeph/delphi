@@ -1,44 +1,32 @@
 # Delphi Studio
 
-Delphi Studio is a terminal notebook IDE for composing multi-track songs. It combines the interactivity of the REPL with the structure of a multi-cell notebook — each cell can hold notation, Python code, or markdown notes.
+Delphi Studio is a native desktop application for composing multi-track music. It combines a notebook-style editor with a piano roll, mixer, real-time visualizer, theory explorer, and SoundFont-powered playback.
 
 ## Launching
 
 ```bash
-delphi studio                       # New empty notebook
-delphi studio my-song               # Open or create "my-song" project
-delphi studio song.dstudio          # Open an existing .dstudio file
+delphi-studio                       # From the command line
 ```
 
-When you pass a name, Studio checks (in order):
-1. A `.dstudio` file at that exact path
-2. A project directory containing `delphi.toml`
-3. A project under `~/.local/share/delphi/projects/`
-4. Otherwise, creates a new empty notebook with that title
+Or find **Delphi Studio** in your desktop application menu.
 
-A fresh notebook starts with a single **Setup** code cell pre-filled with `tempo()`, `key()`, and `time_sig()`.
+Open files from the command line:
+
+```bash
+delphi-studio my-song.dstudio       # Open an existing project
+```
+
+A fresh project starts with a single empty notation cell.
 
 ---
 
 ## Cell Types
 
-Studio has three cell types. Press **Ctrl+T** to cycle between them on the current cell.
-
-### Code Cells `⌨`
-
-Run arbitrary Python. All REPL functions are available — `play()`, `tempo()`, `key()`, `instrument()`, `Song`, `Track`, and more.
-
-Code cells also auto-detect notation: if a line isn't valid Python but looks like music notation, it's played automatically. This means you can mix freely:
-
-```
-instrument("violin")
-tempo(100)
-C4 E4 G4 C5
-```
+Studio has three cell types.
 
 ### Notation Cells `♪`
 
-Pure music notation — no Python needed. Each notation cell becomes a separate **Track** when you Run All (F6).
+Pure music notation — each notation cell becomes a separate **Track** when you play.
 
 Use **pragmas** at the top of a notation cell to set track metadata:
 
@@ -58,10 +46,25 @@ C4:q E4:q G4:q C5:h
 | `@track <label>` | Name the track |
 | `@velocity <0-127>` | Default velocity for the cell |
 | `@channel <0-15>` | MIDI channel |
+| `@key <key>` | Set or change the key (enables Roman numerals & scale degrees) |
+
+### Code Cells `⌨`
+
+Directives that configure the project. Supported directives:
+
+```
+tempo(120)
+key("D minor")
+time_sig(4, 4)
+swing(0.3)
+humanize(0.1)
+```
+
+Setting a key enables Roman numeral chords (`I`, `IV`, `V7`) and scale degree notes (`^1`, `^5`) in notation cells. You can also change the key mid-cell with `# @key G major`.
 
 ### Markdown Cells `¶`
 
-Freeform text for notes, section headers, or lyrics. These don't execute — they're exported as comments in `.delphi` scripts.
+Freeform text for notes, section headers, or lyrics.
 
 ---
 
@@ -71,92 +74,61 @@ Freeform text for notes, section headers, or lyrics. These don't execute — the
 
 | Key | Action |
 |-----|--------|
-| **F5** | Run the focused cell |
-| **F6** | Run All — build Song from all cells and play |
-| **Ctrl+P** | Replay last successfully executed cell |
-| **Ctrl+C** | Stop playback |
+| **F5** | Play all cells |
+| **F6** | Play current cell |
+| **Esc** | Stop playback |
 
-### Quick Reference
-
-| Key | Action |
-|-----|--------|
-| **F1** | Show all keybindings in status bar |
-| **F2** | Toggle quick-reference docs panel |
-
-### Navigation
+### Navigation & Editing
 
 | Key | Action |
 |-----|--------|
-| **Ctrl+↑** | Focus previous cell |
-| **Ctrl+↓** | Focus next cell |
-| **Ctrl+Shift+↑** | Move cell up |
-| **Ctrl+Shift+↓** | Move cell down |
-
-### Editing
-
-| Key | Action |
-|-----|--------|
-| **F7** / **Ctrl+B** | Insert new cell below (inherits current cell type) |
-| **F8** | Delete cell (press twice to confirm) |
-| **Ctrl+T** | Cycle cell type: code → notation → markdown |
-| **Ctrl+E** | Collapse / expand cell |
-| **Ctrl+L** | Preview focused cell (stats without playing) |
-| **Ctrl+Z** | Undo edit |
-| **Ctrl+Y** | Redo edit |
-| **Tab** | Auto-complete |
-
-### File Operations
-
-| Key | Action |
-|-----|--------|
-| **F9** | Export (MIDI + WAV + .delphi script) |
-| **F10** / **Ctrl+S** | Save notebook |
-| **F1** | Show all keybindings |
-| **Ctrl+Q** | Quit (press twice if unsaved changes) |
+| **Ctrl+Space** | Auto-complete |
+| **Ctrl+S** | Save project |
+| **Ctrl+O** | Open file |
+| **Ctrl+N** | New project |
 
 ---
 
-## Cell Run States
+## Built-in Panels
 
-Each cell tracks its execution state, shown as an icon in the cell header:
+### Piano Roll
 
-| Icon | State | Meaning |
-|------|-------|---------|
-| `○` | Empty | Cell hasn't been run yet |
-| `✓` | OK | Last run succeeded (green) |
-| `✗` | Error | Last run failed (red) |
-| `◐` | Stale | Source was edited since last run (yellow) |
+Visual note display synced to your notation. Notes are drawn as colored bars showing pitch, timing, and duration.
 
----
+### Mixer
 
-## Status Bar
+Per-track controls:
+- **Gain** — Volume (0.0 to 1.5)
+- **Pan** — Stereo position (0.0 left, 0.5 center, 1.0 right)
+- **Reverb** — Reverb send (0.0 to 1.0)
+- **Delay** — Delay send (0.0 to 1.0)
+- **Mute / Solo** — Quick track isolation
 
-The status bar at the top shows live engine state:
+### Visualizer
 
-```
- my-song ●  ♩120  C major  🎹 Piano  [3/8]
-```
+Real-time playback animation with note bars and token highlighting.
 
-| Element | Meaning |
-|---------|---------|
-| Title | Notebook name |
-| `●` | Unsaved changes (hidden when clean) |
-| `♩120` | Current tempo |
-| `C major` | Current key |
-| `🎹 Piano` | Active instrument |
-| `[3/8]` | Focused cell / total cells |
+### Theory Explorer
+
+Interactive reference for scales, chords, and intervals. Explore any scale type or chord quality.
+
+### SoundFont Manager
+
+Load and switch SoundFont banks. Auto-downloads GeneralUser GS on first launch.
+
+### Script Engine
+
+Rhai scripting for automation tasks within the Studio.
 
 ---
 
 ## The Multi-Track Workflow
 
-Studio's real power is building multi-track songs from notation cells.
-
 ### 1. Set Up
 
 Create a code cell at the top for global settings:
 
-```python
+```
 tempo(110)
 key("D minor")
 time_sig(4, 4)
@@ -195,158 +167,82 @@ D4,F4,A4:w D4,F4,A4:w
 D4,F4,A4:w C#4,E4,A4:w
 ```
 
-### 3. Run All (F6)
+### 3. Play
 
-Press **F6** to build a `Song` from all notation cells — each becomes a `Track`. Code cells execute in order (setting tempo, key, etc.) and the song plays with all parts layered together.
+Press **F5** to play all cells together — each notation cell becomes a track with its own instrument and MIDI channel.
 
-### 4. Export (F9)
+### 4. Export
 
-Press **F9** to export:
+Use **File → Export** to export:
 - `.mid` — MIDI file with each track on its own channel
 - `.wav` — Rendered audio through the active SoundFont
-- `.delphi` — A standalone Python script that recreates the song
+
+Or use the CLI:
+
+```bash
+delphi export my-song.dstudio --format both --output ./out/
+```
 
 ---
 
 ## File Format
 
-Studio notebooks are saved as `.dstudio` files — JSON with this structure:
+Studio projects are saved as `.dstudio` files — JSON with this structure:
 
 ```json
 {
-  "version": 1,
-  "title": "my-song",
   "settings": {
-    "tempo": 120,
-    "key": "C major",
-    "time_sig": "4/4"
+    "title": "My Song",
+    "bpm": 120.0,
+    "key_name": "C major",
+    "time_sig_num": 4,
+    "time_sig_den": 4,
+    "swing": 0.0,
+    "humanize": 0.0,
+    "soundfont_path": null
   },
   "cells": [
     {
-      "id": 1,
-      "cell_type": "code",
-      "source": "tempo(120)\nkey(\"C major\")",
+      "cell_type": "notation",
+      "source": "C4:q E4:q G4:q C5:h",
       "output": "",
-      "meta": {}
+      "label": "Melody",
+      "instrument": "piano",
+      "channel": 0,
+      "velocity": 80,
+      "collapsed": false
+    }
+  ],
+  "tracks": [
+    {
+      "name": "Melody",
+      "instrument": "piano",
+      "program": 0,
+      "channel": 0,
+      "gain": 1.0,
+      "pan": 0.5,
+      "muted": false,
+      "solo": false,
+      "reverb": 0.0,
+      "delay": 0.0
     }
   ]
 }
 ```
 
-Metadata from pragmas (`@instrument`, `@track`, etc.) is stored in each cell's `meta` field.
+Delphi Studio also reads the legacy Python `.dstudio` format and plain `.delphi` notation files.
 
 ---
 
 ## Auto-Completion
 
-Studio shares the REPL's auto-complete system. Press **Tab** to complete:
+Press **Ctrl+Space** to trigger auto-complete suggestions:
 
 - Note names (`C4`, `F#5`, `Bb3`)
 - Chord symbols (`Cmaj7`, `Am7`, `Dm`)
 - Drum hits (`kick`, `snare`, `hihat`)
 - Duration suffixes (`:q`, `:h`, `:8`)
 - Dynamic markings (`!f`, `!pp`, `!mf`)
-- Function names (`play`, `tempo`, `instrument`)
 - GM instrument names
 - Articulations (`.stac`, `.acc`, `.ferm`)
 - Ornaments (`.tr`, `.mord`, `.grace`)
-
-## Syntax Suggestions
-
-As you type, ghost-text hints appear showing what you could type next:
-
-- After a note → duration suggestion (`:q`)
-- After a drum name → Euclidean syntax (`(3,8)`)
-- After a bar pipe `|` → chord suggestion
-- After `{` → drum layer pattern
-
-Press **→** to accept, or keep typing to ignore.
-
-## Quick Reference Panel
-
-Press **F2** to toggle a docked reference panel showing all notation syntax at a glance — notes, chords, durations, dynamics, articulations, drums, layers, and pragmas. Press **F2** again to close it.
-
----
-
-## Available Functions
-
-All functions from the REPL are available in code cells:
-
-### Playback & Export
-- `play(notation)` — parse and play notation
-- `play(notation, channel=2)` — override MIDI channel
-- `play(notation, instrument="flute")` — override instrument
-- `play_notes(events)` — play raw note events
-- `export(notation, path)` — export to MIDI file
-
-> **SoundFont-first:** All playback uses SoundFont by default. Drums are automatically routed to MIDI channel 9. Falls back to oscillator synth only when no SoundFont is available.
-
-### Context
-- `tempo(bpm)` — set tempo
-- `key(name)` — set key signature
-- `time_sig(num, den)` — set time signature
-- `swing(amount)` — set swing feel (0.0–1.0)
-- `humanize(amount)` — add timing variation (0.0–1.0)
-- `instrument(name)` — set GM instrument
-- `get_context()` — inspect current settings
-- `reset_context()` — reset to defaults
-
-### Theory
-- `note(name)` — create a Note object
-- `chord(name)` — create a Chord object
-- `scale(root, quality)` — create a Scale object
-
-### Song Building
-- `Song(title)` — create a multi-track Song
-- `Track(instrument, notation)` — create a Track
-
-### SoundFont
-- `ensure_soundfont()` — download default SoundFont if needed
-- `soundfont_info()` — show loaded SoundFont details
-- `set_soundfont(path)` — use a custom SoundFont
-
-### Songwriting Utilities
-- `preview(notation)` — dry-run: note count, bars, duration, pitch range, and lint issues
-- `lint(notation)` — check notation for unrecognized tokens with hints
-- `transpose(notation, semitones)` — return transposed notation string
-- `loop(notation)` — play in a loop until Ctrl+C
-
----
-
-## Example Session
-
-A typical Studio workflow for a short piece:
-
-1. Launch: `delphi studio ballad`
-
-2. **Cell 1** (code — Setup):
-   ```python
-   tempo(72)
-   key("G major")
-   ```
-
-3. **Cell 2** (notation — Piano):
-   ```
-   # @instrument piano
-   # @track Right Hand
-
-   | G | Em | C | D |
-   | G | Em | C/E | D/F# |
-   ```
-
-4. **Cell 3** (notation — Bass):
-   ```
-   # @instrument acoustic bass
-   # @track Bass
-
-   G2:h B2:h E2:h G2:h C2:h E2:h D2:h F#2:h
-   ```
-
-5. **Cell 4** (markdown):
-   ```
-   Bridge section — try modulating to Bb major
-   ```
-
-6. Press **F6** to hear all parts together
-7. Press **F9** to export MIDI + WAV
-8. Press **Ctrl+S** to save

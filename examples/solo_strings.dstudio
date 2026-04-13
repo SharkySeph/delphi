@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "title": "Solo - String Pad",
+  "settings": { "tempo": 95, "key": "D minor", "time_sig": "4/4" },
+  "cells": [
+    {
+      "type": "notation",
+      "source": "# @instrument strings\n# @track Pad\n# @velocity 55\n\nD4,F4,A4:w C4,E4,A4:w Bb3,D4,F4:w Bb3,D4,G4:w\nA3,D4,F4:w A3,C4,E4:w Bb3,D4,F4:w A3,C#4,E4:w\nD4,F4,A4:w C4,E4,A4:w Bb3,D4,F4:w Bb3,D4,G4:w\nA3,D4,F4:w A3,C4,E4:w Bb3,D4,F4,A4:w A3,C#4,E4,G4:w",
+      "meta": { "label": "Pad", "program": "strings" }
+    }
+  ]
+}

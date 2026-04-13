@@ -21,7 +21,7 @@
     },
     {
       "type": "notation",
-      "source": "# @instrument piano\n# @track Piano Chords\n# @velocity 75\n\n| Dm | Am/C | Bb | Gm/Bb |\n| Dm/A | Am | Bb | A7 |\n| Dm | Am/C | Bb | Gm/Bb |\n| Dm/A | Am | Bbmaj7 | A7 |",
+      "source": "# @instrument piano\n# @track Piano Chords\n# @velocity 70\n\n| Dm | Am/C | Bb | Gm/Bb |\n| Dm/A | Am | Bb | A7 |\n| Dm | Am/C | Bb | Gm/Bb |\n| Dm/A | Am | Bbmaj7 | A7 |",
       "meta": {
         "label": "Piano Chords",
         "program": "piano"
@@ -29,7 +29,7 @@
     },
     {
       "type": "notation",
-      "source": "# @instrument acoustic bass\n# @track Bass\n# @velocity 100\n\nD2:h D2:h C2:h C2:h Bb1:h Bb1:h Bb1:h Bb1:h\nA1:h A1:h A1:h A1:h Bb1:h Bb1:h A1:h A1:h\nD2:h D2:h C2:h C2:h Bb1:h Bb1:h Bb1:h Bb1:h\nA1:h A1:h A1:h A1:h Bb1:h Bb1:h A1:h A1:h",
+      "source": "# @instrument acoustic bass\n# @track Bass\n# @velocity 85\n\nD2:h D2:h C2:h C2:h Bb1:h Bb1:h Bb1:h Bb1:h\nA1:h A1:h A1:h A1:h Bb1:h Bb1:h A1:h A1:h\nD2:h D2:h C2:h C2:h Bb1:h Bb1:h Bb1:h Bb1:h\nA1:h A1:h A1:h A1:h Bb1:h Bb1:h A1:h A1:h",
       "meta": {
         "label": "Bass",
         "program": "acoustic bass"
@@ -41,7 +41,7 @@
     },
     {
       "type": "notation",
-      "source": "# @instrument violin\n# @track Melody\n# @velocity 85\n\nr:h D5:q!mp F5:q\nA5:h!mf G5:8 F5:8 E5:q\nD5:q.acc C5:8 Bb4:q A4:q\nBb4:h.ten A4:q!p r:q\n\nD5:q F5:q A5:h!f\nG5:q.tr F5:8 E5:8 D5:h\nC5:q!mf D5:q Bb4:h\nA4:w!p\n\nD5:8!mp E5:8 F5:q A5:h!mf\nG5:q F5:8.stac E5:8.stac D5:h\nC5:q!f D5:q.grace Bb4:q A4:q\nBb4:h A4:h!p\n\nA5:q.ferm!f G5:8 F5:8 E5:q D5:q\nC5:q D5:q E5:h!mf\nF5:q!mp E5:q D5:h\nD5:w!p",
+      "source": "# @instrument violin\n# @track Melody\n# @velocity 80\n\nr:h D5:q!mp F5:q\nA5:h!mf G5:8 F5:8 E5:q\nD5:q..acc C5:8 Bb4:q A4:q\nBb4:h.ten A4:q!p r:q\n\nD5:q F5:q A5:h!f\nG5:q.ten F5:8 E5:8 D5:h\nC5:q!mf D5:q Bb4:h\nA4:w!p\n\nD5:8!mp E5:8 F5:q A5:h!mf\nG5:q F5:8 E5:8 D5:h\nC5:q!f D5:q Bb4:q A4:q\nBb4:h A4:h!p\n\nA5:q.ferm!f G5:8 F5:8 E5:q D5:q\nC5:q D5:q E5:h!mf\nF5:q!mp E5:q D5:h\nD5:w!p",
       "meta": {
         "label": "Melody",
         "program": "violin"
@@ -49,7 +49,7 @@
     },
     {
       "type": "notation",
-      "source": "# @instrument strings\n# @track Pad\n# @velocity 55\n\nD4,F4,A4:w C4,E4,A4:w Bb3,D4,F4:w Bb3,D4,G4:w\nA3,D4,F4:w A3,C4,E4:w Bb3,D4,F4:w A3,C#4,E4:w\nD4,F4,A4:w C4,E4,A4:w Bb3,D4,F4:w Bb3,D4,G4:w\nA3,D4,F4:w A3,C4,E4:w Bb3,D4,F4,A4:w A3,C#4,E4,G4:w",
+      "source": "# @instrument strings\n# @track Pad\n# @velocity 50\n\nD3,F3,A3:w C3,E3,A3:w Bb2,D3,F3:w Bb2,D3,G3:w\nA2,D3,F3:w A2,C3,E3:w Bb2,D3,F3:w A2,C#3,E3:w\nD3,F3,A3:w C3,E3,A3:w Bb2,D3,F3:w Bb2,D3,G3:w\nA2,D3,F3:w A2,C3,E3:w Bb2,D3,F3,A3:w A2,C#3,E3,G3:w",
       "meta": {
         "label": "Pad",
         "program": "strings"
@@ -65,7 +65,7 @@
     },
     {
       "type": "notation",
-      "source": "# @track Drums\n# @channel 9\n\n{bd(3,8) sd(2,8) hh(5,8)}\n{bd(3,8) sd(2,8) hh(5,8)}\n{bd(3,8) sd(2,8) hh(5,8)}\n{bd(3,8) sd(2,8) hh(5,8) crash:w}\n{bd(3,8) sd(2,8) hh(5,8)}\n{bd(3,8) sd(2,8) hh(5,8)}\n{bd(3,8) sd(2,8) hh(5,8)}\n{bd(3,8) sd(2,8) ride(5,8) crash:w}",
+      "source": "# @instrument drums\n# @track Drums\n# @channel 9\n\n{bd(3,8) sd(2,8) hh(5,8)}\n{bd(3,8) sd(2,8) hh(5,8)}\n{bd(3,8) sd(2,8) hh(5,8)}\n{bd(3,8) sd(2,8) hh(5,8) crash:w}\n{bd(3,8) sd(2,8) hh(5,8)}\n{bd(3,8) sd(2,8) hh(5,8)}\n{bd(3,8) sd(2,8) hh(5,8)}\n{bd(3,8) sd(2,8) ride(5,8) crash:w}",
       "meta": {
         "label": "Drums",
         "channel": 9

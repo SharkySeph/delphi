@@ -28,6 +28,7 @@ pub struct PianoRoll {
     /// Notes to display.
     pub notes: Vec<RollNote>,
     /// Currently selected note indices.
+    #[allow(dead_code)]
     pub selection: Vec<usize>,
     /// Dirty flag: hash of cell sources last synced.
     sync_hash: u64,
@@ -53,6 +54,7 @@ impl PianoRoll {
     }
 
     /// Convert screen x to tick position (snapped).
+    #[allow(dead_code)]
     fn x_to_tick(&self, x: f32, offset: f32) -> u32 {
         let raw = ((x - offset) / self.zoom_x + self.scroll_x) as i32;
         let raw = raw.max(0) as u32;
@@ -183,7 +185,7 @@ impl PianoRoll {
             Color32::from_rgb(190, 80, 70),
         ];
 
-        for (i, note) in self.notes.iter().enumerate() {
+        for (_i, note) in self.notes.iter().enumerate() {
             let x = self.tick_to_x(note.start_tick, rect.left() + piano_width);
             let w = note.duration_ticks as f32 * self.zoom_x;
             let y = self.note_to_y(note.midi_note, rect.top(), available.y);
@@ -244,13 +246,16 @@ impl PianoRoll {
     fn sync_from_studio(&mut self, studio: &StudioState) {
         use crate::studio::{gm_program_from_name, parse_notation_to_events};
 
+        let key_name = &studio.settings.key_name;
+        let key_opt: Option<&str> = if key_name.is_empty() { None } else { Some(key_name) };
+
         self.notes.clear();
         for (cell_idx, cell) in studio.cells.iter().enumerate() {
             if cell.cell_type == "markdown" || cell.source.trim().is_empty() {
                 continue;
             }
             let program = gm_program_from_name(&cell.instrument);
-            let events = parse_notation_to_events(&cell.source, cell.channel, program, cell.velocity);
+            let events = parse_notation_to_events(&cell.source, cell.channel, program, cell.velocity, key_opt);
             for ev in events {
                 self.notes.push(RollNote {
                     midi_note: ev.midi_note,

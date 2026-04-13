@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use delphi_core::duration::TimeSignature;
-use delphi_engine::soundfont::{render_to_wav_panned};
+use delphi_engine::soundfont::render_to_wav_full;
 use delphi_midi::export::{MidiExporter, MidiTrack};
 
 use crate::studio::StudioState;
@@ -11,6 +11,7 @@ use crate::studio::StudioState;
 pub enum ExportFormat {
     Midi,
     Wav,
+    #[allow(dead_code)]
     MusicXml,
 }
 
@@ -214,7 +215,10 @@ impl ExportDialog {
                 };
                 let tempo = studio.tempo();
                 let pan = studio.channel_pan_map();
-                match render_to_wav_panned(&sf, &events, &tempo, &path, &pan) {
+                let reverb = studio.channel_reverb_map();
+                let delay = studio.channel_delay_map();
+                let volume = studio.channel_volume_map();
+                match render_to_wav_full(&sf, &events, &tempo, &path, &pan, &reverb, &delay, &volume) {
                     Ok(()) => self.status = format!("Exported WAV to {}", path.display()),
                     Err(e) => self.status = format!("Error: {}", e),
                 }

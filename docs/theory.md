@@ -1,83 +1,43 @@
-# Theory Module
+# Theory Reference
 
-Delphi includes a music theory module for working with notes, chords, and scales as first-class objects. These can be inspected, transposed, and played.
+Delphi includes a music theory engine built into the Rust core. Notes, chords, and scales are first-class types used by the notation parser, the Theory Explorer panel in Delphi Studio, and the CLI.
 
 ## Table of Contents
 
 - [Notes](#notes)
 - [Chords](#chords)
 - [Scales](#scales)
-- [Using Theory in Compositions](#using-theory-in-compositions)
 
 ---
 
 ## Notes
 
-Create note objects to inspect MIDI values, transpose, and play single pitches.
+Notes use scientific pitch notation: pitch class, optional accidental, and octave number.
 
-```python
-from delphi import note
-
-n = note("C4")
-print(n)          # C4
-print(n.midi)     # 60
-
-# Transpose
-up = n.transpose(7)    # G4 (up a perfect 5th)
-down = n.transpose(-3) # A3 (down a minor 3rd)
-
-# Play it
-n.play()
+```
+C4          Middle C (MIDI 60)
+F#5         F-sharp in octave 5
+Bb3         B-flat in octave 3
 ```
 
-### NoteObj API
+**Pitch classes:** C, D, E, F, G, A, B
 
-| Property/Method | Returns | Description |
-|----------------|---------|-------------|
-| `.midi` | `int` | MIDI note number (0-127) |
-| `transpose(semitones)` | `NoteObj` | New note shifted by semitones |
-| `play()` | `None` | Play the note through speakers |
+**Accidentals:** `#` (sharp), `##` (double sharp), `b` (flat), `bb` (double flat)
+
+**Octave range:** -1 to 9 (C4 = middle C = MIDI 60)
 
 ## Chords
 
-Create chord objects to inspect their notes, arpeggiate, and play them.
+Chords are written as a root note followed by a quality suffix. All notes sound simultaneously.
 
-```python
-from delphi import chord
-
-c = chord("Cmaj7")
-print(c)              # chord('Cmaj7')
-print(c.midi_notes)   # [60, 64, 67, 71]
-
-# Get individual notes
-for n in c.notes():
-    print(n)          # C4, E4, G4, B4
-
-# Create an arpeggio
-arp = c.arpeggio(direction="up", duration="eighth")
-arp.play()
-
-# Play the chord
-c.play()
+```
+C           C major triad
+Am          A minor
+G7          G dominant 7th
+Dmaj7       D major 7th
 ```
 
-### ChordObj API
-
-| Property/Method | Returns | Description |
-|----------------|---------|-------------|
-| `.midi_notes` | `list[int]` | MIDI note numbers |
-| `notes()` | `list[NoteObj]` | Individual note objects |
-| `arpeggio(direction="up", duration="eighth")` | `ArpeggioObj` | Arpeggiated version |
-| `play()` | `None` | Play the chord |
-
-### Arpeggio Directions
-
-```python
-chord("Am7").arpeggio("up")      # Low to high
-chord("Am7").arpeggio("down")    # High to low
-```
-
-### Supported Chord Qualities
+### Chord Qualities
 
 | Input | Quality |
 |-------|---------|
@@ -104,36 +64,20 @@ chord("Am7").arpeggio("down")    # High to low
 | `C7sus4`, `C7sus2` | 7th suspended |
 | `Calt` | Altered dominant |
 
-## Scales
+### Slash Chords
 
-Create scale objects to explore modes, exotic scales, and more. Over 40 scale types are available.
-
-```python
-from delphi import scale
-
-s = scale("C", "dorian")
-print(s)                # scale('C', 'dorian')
-print(s.midi_notes)     # [60, 62, 63, 65, 67, 69, 70]
-
-# Get note objects
-for n in s.notes():
-    print(n)            # C4, D4, Eb4, F4, G4, A4, Bb4
-
-# Play the scale
-s.play()
+```
+Am/E        A minor with E bass (first inversion)
+C/G         C major with G bass (second inversion)
+Cmaj7/B     C major 7th over B bass
+Am4/E3      A minor at octave 4 with E3 bass
 ```
 
-### ScaleObj API
+## Scales
 
-| Property/Method | Returns | Description |
-|----------------|---------|-------------|
-| `.midi_notes` | `list[int]` | MIDI note numbers |
-| `notes()` | `list[NoteObj]` | Individual note objects |
-| `play()` | `None` | Play the scale ascending |
+Over 50 scale types are built in. Use them in the Theory Explorer panel or reference them when composing.
 
-### Scale Types
-
-#### Church Modes
+### Church Modes
 
 | Name | Intervals | Character |
 |------|-----------|-----------|
@@ -145,15 +89,15 @@ s.play()
 | `minor` / `aeolian` | 1 2 ♭3 4 5 ♭6 ♭7 | Sad, natural minor |
 | `locrian` | 1 ♭2 ♭3 4 ♭5 ♭6 ♭7 | Dark, unstable |
 
-#### Minor Variants
+### Minor Variants
 
 | Name | Intervals | Character |
 |------|-----------|-----------|
 | `natural minor` | 1 2 ♭3 4 5 ♭6 ♭7 | Same as aeolian |
-| `harmonic minor` | 1 2 ♭3 4 5 ♭6 7 | Classical minor, augmented 2nd |
+| `harmonic minor` | 1 2 ♭3 4 5 ♭6 7 | Classical minor |
 | `melodic minor` | 1 2 ♭3 4 5 6 7 | Jazz minor (ascending) |
 
-#### Pentatonic & Blues
+### Pentatonic & Blues
 
 | Name | Notes | Character |
 |------|-------|-----------|
@@ -162,7 +106,7 @@ s.play()
 | `blues` | 1 ♭3 4 ♯4 5 ♭7 | Blues with "blue note" |
 | `major blues` | 1 2 ♭3 3 5 6 | Major blues |
 
-#### Symmetric Scales
+### Symmetric Scales
 
 | Name | Notes | Character |
 |------|-------|-----------|
@@ -172,7 +116,7 @@ s.play()
 | `half-whole diminished` | H-W-H-W-H-W-H-W | Dominant diminished |
 | `augmented` | m3-H-m3-H-m3-H | Coltrane changes |
 
-#### Bebop Scales
+### Bebop Scales
 
 | Name | Character |
 |------|-----------|
@@ -181,7 +125,7 @@ s.play()
 | `bebop minor` | Dorian + ♮3 passing tone |
 | `bebop dorian` | Dorian + ♮3 passing tone (variant) |
 
-#### Altered & Exotic
+### Altered & Exotic
 
 | Name | Character |
 |------|-----------|
@@ -190,7 +134,7 @@ s.play()
 | `lydian augmented` | Lydian with ♯5 |
 | `phrygian dominant` / `spanish` | Phrygian with ♮3 (flamenco) |
 | `double harmonic` | Byzantine / Arabic scale |
-| `hungarian minor` | Minor with ♯4, exotic sound |
+| `hungarian minor` | Minor with ♯4 |
 | `hungarian major` | Major with ♯4 and ♭7 |
 | `neapolitan minor` | Minor with ♭2 |
 | `neapolitan major` | Major with ♭2 |
@@ -203,7 +147,7 @@ s.play()
 | `iwato` | Japanese, very dissonant |
 | `egyptian` | Ancient Egyptian feel |
 
-#### Jazz / Modal Interchange
+### Jazz / Modal Interchange
 
 | Name | Character |
 |------|-----------|
@@ -211,35 +155,29 @@ s.play()
 | `mixolydian b6` | Hindu / Aeolian dominant |
 | `locrian #2` | Locrian with ♮2 |
 
----
+## Key-Relative Notation
 
-## Using Theory in Compositions
+When a key is set for the project, Delphi's theory engine resolves Roman numeral chords and scale degree notes to concrete pitches using the key's scale.
 
-Theory objects help you compose programmatically:
+### Roman Numeral Resolution
 
-```python
-from delphi import scale, chord, note, Song, Track
+Each Roman numeral maps to a scale degree root, then the chord quality is applied:
 
-# Generate a melody from a scale
-s = scale("D", "dorian")
-midi_notes = s.midi_notes
+| Key | I | ii | iii | IV | V | vi | vii° |
+|-----|---|----|-----|----|---|-----|------|
+| C major | C | Dm | Em | F | G | Am | B° |
+| G major | G | Am | Bm | C | D | Em | F#° |
+| D minor | Dm | E° | F | Gm | Am | Bb | C |
 
-# Build notation from scale degrees
-melody = " ".join(f"C{n//12}:8" for n in midi_notes) # (simplified)
+Upper-case numerals produce **major** chords; lower-case produce **minor**. Append any quality suffix (e.g. `V7`, `IVsus4`, `viidim7`) — the suffix overrides the default quality.
 
-# Transpose a chord progression
-roots = ["C", "A", "F", "G"]
-for root in roots:
-    c = chord(f"{root}maj7")
-    print(f"{root}maj7: {c.midi_notes}")
-```
+### Scale Degree Notes
 
-### In the REPL
+The `^` prefix resolves a degree number (1–7) to the corresponding note in the scale:
 
-Theory functions are available directly in the REPL:
+| Key | ^1 | ^2 | ^3 | ^4 | ^5 | ^6 | ^7 |
+|-----|----|----|----|----|----|----|-----|
+| C major | C4 | D4 | E4 | F4 | G4 | A4 | B4 |
+| G major | G4 | A4 | B4 | C4 | D4 | E4 | F#4 |
 
-```
-🎵 > scale("C", "blues").play()
-🎵 > chord("Am7").arpeggio("up").play()
-🎵 > note("E4").transpose(5).play()
-```
+See the [Notation Reference](notation.md#roman-numeral-chords) for full syntax details.

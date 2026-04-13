@@ -211,7 +211,7 @@ impl FromStr for Chord {
     }
 }
 
-fn parse_quality(s: &str) -> Result<ChordQuality, ChordParseError> {
+pub(crate) fn parse_quality(s: &str) -> Result<ChordQuality, ChordParseError> {
     match s {
         "" | "M" | "maj" | "major" => Ok(ChordQuality::Major),
         "m" | "min" | "minor" => Ok(ChordQuality::Minor),

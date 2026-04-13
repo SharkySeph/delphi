@@ -9,22 +9,20 @@
 set -euo pipefail
 
 REPO_URL="https://raw.githubusercontent.com/SharkySeph/delphi/main/deploy"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)" || SCRIPT_DIR=""
 
 case "$(uname -s)" in
     Linux)
-        echo "Detected Linux — running Linux installer..."
-        # If running from the repo, use local script
-        SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-        if [[ -f "$SCRIPT_DIR/install-linux.sh" ]]; then
+        echo "Detected Linux"
+        if [[ -n "$SCRIPT_DIR" && -f "$SCRIPT_DIR/install-linux.sh" ]]; then
             exec bash "$SCRIPT_DIR/install-linux.sh" "$@"
         else
             curl -sSf "$REPO_URL/install-linux.sh" | bash -s -- "$@"
         fi
         ;;
     Darwin)
-        echo "Detected macOS — running macOS installer..."
-        SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-        if [[ -f "$SCRIPT_DIR/install-macos.sh" ]]; then
+        echo "Detected macOS"
+        if [[ -n "$SCRIPT_DIR" && -f "$SCRIPT_DIR/install-macos.sh" ]]; then
             exec bash "$SCRIPT_DIR/install-macos.sh" "$@"
         else
             curl -sSf "$REPO_URL/install-macos.sh" | bash -s -- "$@"
@@ -35,7 +33,6 @@ case "$(uname -s)" in
         echo ""
         echo "  irm $REPO_URL/install-windows.ps1 | iex"
         echo ""
-        echo "Or download and run: deploy/install-windows.ps1"
         exit 1
         ;;
     *)
