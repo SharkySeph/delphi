@@ -39,7 +39,7 @@ C2:h G2:h  F2:h C2:h
 - Live diagnostics — warnings for unknown tokens as you type
 - Export to MIDI and WAV
 - Save/load `.dstudio` project files and `.delphi` scripts
-- 5 bundled examples (Hello World, Twinkle Twinkle, 12-Bar Blues, Canon in D, Studio Showcase)
+- 6 bundled examples (Hello World, Twinkle Twinkle, 12-Bar Blues, Canon in D, Digital Shrine, Studio Showcase)
 
 ### Keyboard shortcuts
 
@@ -158,7 +158,7 @@ See [Notation Reference](docs/notation.md) for the complete syntax.
 
 ## Examples
 
-Open the bundled examples from **File → Examples** in Delphi Studio — includes Hello World, Twinkle Twinkle Little Star, 12-Bar Blues, Pachelbel's Canon in D, and the Studio Showcase.
+Open the bundled examples from **File → Examples** in Delphi Studio — includes Hello World, Twinkle Twinkle Little Star, 12-Bar Blues, Pachelbel's Canon in D, Digital Shrine, and the Studio Showcase.
 
 Or export from the CLI:
 

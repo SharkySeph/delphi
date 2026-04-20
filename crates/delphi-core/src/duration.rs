@@ -179,6 +179,115 @@ impl fmt::Display for TimeSignature {
     }
 }
 
+/// A tempo map for converting between ticks and seconds with mid-song tempo changes.
+///
+/// Holds a sorted list of (tick, bpm) entries. Always has at least one entry at tick 0.
+/// When there are no mid-song changes, behaves identically to a single `Tempo`.
+#[derive(Debug, Clone)]
+pub struct TempoMap {
+    /// Sorted (tick, bpm) changes. Invariant: non-empty, first entry is at tick 0.
+    changes: Vec<(u32, f64)>,
+}
+
+impl TempoMap {
+    /// Create a constant-tempo map (no mid-song changes).
+    pub fn constant(tempo: &Tempo) -> Self {
+        Self {
+            changes: vec![(0, tempo.bpm)],
+        }
+    }
+
+    /// Create from an initial tempo plus a slice of `MetaEvent`s.
+    /// Only `TempoChange` variants are used; others are ignored.
+    pub fn from_meta_events(tempo: &Tempo, meta: &[crate::event::MetaEvent]) -> Self {
+        let mut changes = vec![(0u32, tempo.bpm)];
+        for ev in meta {
+            if let crate::event::MetaEvent::TempoChange { tick, bpm } = ev {
+                changes.push((*tick, *bpm));
+            }
+        }
+        changes.sort_by_key(|&(t, _)| t);
+        // Keep only the last entry at each tick
+        changes.dedup_by_key(|entry| entry.0);
+        Self { changes }
+    }
+
+    /// Convert an absolute tick position to seconds.
+    pub fn tick_to_seconds(&self, tick: u32) -> f64 {
+        let ppq = Duration::TICKS_PER_QUARTER as f64;
+        let mut seconds = 0.0;
+        let mut prev_tick = 0u32;
+        let mut prev_bpm = self.changes[0].1;
+
+        for &(change_tick, bpm) in &self.changes[1..] {
+            if change_tick >= tick {
+                break;
+            }
+            let delta = change_tick - prev_tick;
+            seconds += (delta as f64 / ppq) * 60.0 / prev_bpm;
+            prev_tick = change_tick;
+            prev_bpm = bpm;
+        }
+
+        let remaining = tick - prev_tick;
+        seconds += (remaining as f64 / ppq) * 60.0 / prev_bpm;
+        seconds
+    }
+
+    /// Convert a tick range (start + duration) to a duration in seconds.
+    pub fn tick_range_to_seconds(&self, start_tick: u32, duration_ticks: u32) -> f64 {
+        self.tick_to_seconds(start_tick + duration_ticks) - self.tick_to_seconds(start_tick)
+    }
+
+    /// Convert an elapsed-seconds value to the corresponding tick position.
+    pub fn seconds_to_tick(&self, seconds: f64) -> u32 {
+        let ppq = Duration::TICKS_PER_QUARTER as f64;
+        let mut accumulated = 0.0;
+        let mut prev_tick = 0u32;
+        let mut prev_bpm = self.changes[0].1;
+
+        for &(change_tick, bpm) in &self.changes[1..] {
+            let delta = change_tick - prev_tick;
+            let seg = (delta as f64 / ppq) * 60.0 / prev_bpm;
+            if accumulated + seg >= seconds {
+                let rem = seconds - accumulated;
+                let ticks = rem * prev_bpm / 60.0 * ppq;
+                return prev_tick + ticks as u32;
+            }
+            accumulated += seg;
+            prev_tick = change_tick;
+            prev_bpm = bpm;
+        }
+
+        let rem = seconds - accumulated;
+        let ticks = rem * prev_bpm / 60.0 * ppq;
+        prev_tick + ticks as u32
+    }
+
+    /// Get the BPM in effect at a given tick position.
+    pub fn bpm_at_tick(&self, tick: u32) -> f64 {
+        let mut bpm = self.changes[0].1;
+        for &(change_tick, new_bpm) in &self.changes[1..] {
+            if change_tick > tick {
+                break;
+            }
+            bpm = new_bpm;
+        }
+        bpm
+    }
+
+    /// The initial BPM (at tick 0).
+    pub fn initial_bpm(&self) -> f64 {
+        self.changes[0].1
+    }
+}
+
+impl From<&Tempo> for TempoMap {
+    fn from(tempo: &Tempo) -> Self {
+        Self::constant(tempo)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -222,5 +331,61 @@ mod tests {
         assert_eq!(Duration::from_suffix("q"), Some(Duration::QUARTER));
         assert_eq!(Duration::from_suffix("8"), Some(Duration::EIGHTH));
         assert_eq!(Duration::from_suffix("h."), Some(Duration::HALF.dotted()));
+    }
+
+    #[test]
+    fn test_tempo_map_constant() {
+        let map = TempoMap::constant(&Tempo::new(120.0));
+        // 480 ticks = 1 beat = 0.5s at 120 BPM
+        assert!((map.tick_to_seconds(480) - 0.5).abs() < 0.001);
+        assert!((map.tick_to_seconds(960) - 1.0).abs() < 0.001);
+        // Round-trip
+        assert_eq!(map.seconds_to_tick(0.5), 480);
+        assert_eq!(map.bpm_at_tick(0), 120.0);
+        assert_eq!(map.bpm_at_tick(9999), 120.0);
+    }
+
+    #[test]
+    fn test_tempo_map_with_change() {
+        use crate::event::MetaEvent;
+        // Start at 120 BPM, change to 60 BPM at tick 960 (beat 2)
+        let meta = vec![MetaEvent::TempoChange { tick: 960, bpm: 60.0 }];
+        let map = TempoMap::from_meta_events(&Tempo::new(120.0), &meta);
+
+        // First 960 ticks at 120 BPM = 2 beats * 0.5s = 1.0s
+        assert!((map.tick_to_seconds(960) - 1.0).abs() < 0.001);
+        // Next 480 ticks at 60 BPM = 1 beat * 1.0s = 1.0s → total 2.0s
+        assert!((map.tick_to_seconds(1440) - 2.0).abs() < 0.001);
+        // tick_range_to_seconds across the boundary
+        assert!((map.tick_range_to_seconds(480, 960) - 1.5).abs() < 0.001);
+        // seconds_to_tick inverse
+        assert_eq!(map.seconds_to_tick(1.0), 960);
+        assert_eq!(map.seconds_to_tick(2.0), 1440);
+        // BPM lookup
+        assert_eq!(map.bpm_at_tick(0), 120.0);
+        assert_eq!(map.bpm_at_tick(960), 60.0);
+        assert_eq!(map.bpm_at_tick(2000), 60.0);
+    }
+
+    #[test]
+    fn test_tempo_map_multiple_changes() {
+        use crate::event::MetaEvent;
+        // 120 BPM → 60 BPM at tick 480 → 240 BPM at tick 960
+        let meta = vec![
+            MetaEvent::TempoChange { tick: 480, bpm: 60.0 },
+            MetaEvent::TempoChange { tick: 960, bpm: 240.0 },
+        ];
+        let map = TempoMap::from_meta_events(&Tempo::new(120.0), &meta);
+
+        // 0..480 at 120 BPM = 1 beat * 0.5s = 0.5s
+        assert!((map.tick_to_seconds(480) - 0.5).abs() < 0.001);
+        // 480..960 at 60 BPM = 1 beat * 1.0s → total 1.5s
+        assert!((map.tick_to_seconds(960) - 1.5).abs() < 0.001);
+        // 960..1440 at 240 BPM = 1 beat * 0.25s → total 1.75s
+        assert!((map.tick_to_seconds(1440) - 1.75).abs() < 0.001);
+
+        assert_eq!(map.bpm_at_tick(0), 120.0);
+        assert_eq!(map.bpm_at_tick(480), 60.0);
+        assert_eq!(map.bpm_at_tick(960), 240.0);
     }
 }

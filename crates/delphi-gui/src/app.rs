@@ -140,6 +140,10 @@ impl DelphiApp {
                         self.load_example("Canon in D", EXAMPLE_CANON);
                         ui.close_menu();
                     }
+                    if ui.button("Digital Shrine").clicked() {
+                        self.load_example_dstudio_file("_delphi_shrine.dstudio", EXAMPLE_DIGITAL_SHRINE);
+                        ui.close_menu();
+                    }
                     if ui.button("Studio Showcase").clicked() {
                         self.load_example_dstudio();
                         ui.close_menu();
@@ -254,11 +258,15 @@ impl DelphiApp {
     }
 
     fn load_example_dstudio(&mut self) {
+        self.load_example_dstudio_file("_delphi_showcase.dstudio", EXAMPLE_SHOWCASE);
+    }
+
+    fn load_example_dstudio_file(&mut self, filename: &str, content: &str) {
         // Write to a temp file and use the standard load() path so that
         // channel assignment, track building, and pragma parsing all go
         // through one code path.
-        let tmp = std::env::temp_dir().join("_delphi_showcase.dstudio");
-        if std::fs::write(&tmp, EXAMPLE_SHOWCASE).is_ok() {
+        let tmp = std::env::temp_dir().join(filename);
+        if std::fs::write(&tmp, content).is_ok() {
             let path = tmp.clone();
             self.studio = StudioState::new();
             if self.studio.load(&path).is_ok() {
@@ -326,6 +334,9 @@ D4:8  B3:8  D4:8  A4:8  G4:8  B4:8  A4:8  G4:8
 F#4:8 D4:8  E4:8  C#5:8 D5:8  F#5:8 A5:8  A4:8
 B4:8  G4:8  A4:8  F#4:8 D4:8  D5:8  D5:8  C#5:8
 ";
+
+/// Built-in example: Digital Shrine (.dstudio JSON)
+const EXAMPLE_DIGITAL_SHRINE: &str = include_str!("../../../examples/digital_shrine.dstudio");
 
 /// Built-in example: Studio Showcase (.dstudio JSON)
 const EXAMPLE_SHOWCASE: &str = include_str!("../../../examples/showcase.dstudio");
@@ -551,10 +562,13 @@ impl eframe::App for DelphiApp {
         // Update visualizer with playback state
         {
             let events = self.studio.collect_events_mixed(None, self.mixer.master_gain);
-            let bpm = self.transport.bpm_override.unwrap_or(self.studio.settings.bpm);
+            let tempo_map = match self.transport.bpm_override {
+                Some(bpm) => delphi_core::duration::TempoMap::constant(&delphi_core::duration::Tempo { bpm }),
+                None => self.studio.tempo_map(),
+            };
             let playing = self.transport.is_playing();
             let elapsed = self.transport.elapsed_secs();
-            self.visualizer.update_playback(&events, elapsed, bpm, playing);
+            self.visualizer.update_playback(&events, elapsed, &tempo_map, playing);
         }
 
         // Write cell output after running
@@ -596,8 +610,110 @@ impl eframe::App for DelphiApp {
     }
 }
 
-/// Built-in help / quick reference panel.
+/// Built-in help / quick reference panel with documentation tabs.
 fn help_panel_ui(ui: &mut egui::Ui) {
+    // Embedded documentation from docs/ folder (compiled in at build time)
+    static DOC_NOTATION: &str = include_str!("../../../docs/notation.md");
+    static DOC_THEORY: &str = include_str!("../../../docs/theory.md");
+    static DOC_COMPOSITION: &str = include_str!("../../../docs/composition.md");
+    static DOC_SONGS: &str = include_str!("../../../docs/songs-and-tracks.md");
+    static DOC_STUDIO: &str = include_str!("../../../docs/studio.md");
+
+    // Tab selection (persisted via egui data)
+    let tab_id = ui.make_persistent_id("help_tab");
+    let mut tab: usize = ui.data_mut(|d| d.get_temp(tab_id).unwrap_or(0));
+
+    ui.horizontal_wrapped(|ui| {
+        let tabs = ["Quick Ref", "Notation", "Theory", "Composition", "Songs & Tracks", "Studio"];
+        for (i, label) in tabs.iter().enumerate() {
+            if ui.selectable_label(tab == i, *label).clicked() {
+                tab = i;
+            }
+        }
+    });
+    ui.data_mut(|d| d.insert_temp(tab_id, tab));
+    ui.separator();
+
+    match tab {
+        0 => help_quick_reference(ui),
+        1 => render_markdown_doc(ui, DOC_NOTATION),
+        2 => render_markdown_doc(ui, DOC_THEORY),
+        3 => render_markdown_doc(ui, DOC_COMPOSITION),
+        4 => render_markdown_doc(ui, DOC_SONGS),
+        5 => render_markdown_doc(ui, DOC_STUDIO),
+        _ => {}
+    }
+}
+
+/// Render a markdown document with basic styling in egui.
+fn render_markdown_doc(ui: &mut egui::Ui, source: &str) {
+    let heading_color = egui::Color32::from_rgb(86, 182, 194);
+    let code_color = egui::Color32::from_rgb(229, 192, 123);
+    let dim_color = egui::Color32::from_rgb(150, 150, 150);
+
+    egui::ScrollArea::vertical().show(ui, |ui| {
+        let mut in_code_block = false;
+
+        for line in source.lines() {
+            // Code block fence
+            if line.trim_start().starts_with("```") {
+                in_code_block = !in_code_block;
+                continue;
+            }
+
+            if in_code_block {
+                ui.label(egui::RichText::new(line).monospace().color(code_color).size(13.0));
+                continue;
+            }
+
+            let trimmed = line.trim();
+
+            // Headings
+            if trimmed.starts_with("### ") {
+                ui.add_space(4.0);
+                ui.label(egui::RichText::new(&trimmed[4..]).strong().size(14.0).color(heading_color));
+            } else if trimmed.starts_with("## ") {
+                ui.add_space(6.0);
+                ui.label(egui::RichText::new(&trimmed[3..]).strong().size(16.0).color(heading_color));
+                ui.separator();
+            } else if trimmed.starts_with("# ") {
+                ui.add_space(8.0);
+                ui.heading(egui::RichText::new(&trimmed[2..]).color(heading_color));
+                ui.separator();
+            } else if trimmed.starts_with("---") {
+                ui.separator();
+            } else if trimmed.starts_with("| ") {
+                // Table row
+                ui.label(egui::RichText::new(trimmed).monospace().size(12.0).color(dim_color));
+            } else if trimmed.starts_with("- ") || trimmed.starts_with("* ") {
+                ui.label(format!("  • {}", &trimmed[2..]));
+            } else if trimmed.is_empty() {
+                ui.add_space(2.0);
+            } else {
+                // Inline code in backticks: render with mixed styling
+                if trimmed.contains('`') {
+                    ui.horizontal_wrapped(|ui| {
+                        ui.spacing_mut().item_spacing.x = 0.0;
+                        let mut in_backtick = false;
+                        for part in trimmed.split('`') {
+                            if in_backtick {
+                                ui.label(egui::RichText::new(part).monospace().color(code_color));
+                            } else if !part.is_empty() {
+                                ui.label(part);
+                            }
+                            in_backtick = !in_backtick;
+                        }
+                    });
+                } else {
+                    ui.label(trimmed);
+                }
+            }
+        }
+    });
+}
+
+/// Original quick reference content (keyboard shortcuts + cheat sheet).
+fn help_quick_reference(ui: &mut egui::Ui) {
     egui::ScrollArea::vertical().show(ui, |ui| {
         ui.heading("Delphi Studio — Quick Reference");
         ui.separator();
@@ -643,7 +759,10 @@ fn help_panel_ui(ui: &mut egui::Ui) {
             row(ui, "!p !mf !ff", "Dynamics (pp, p, mp, mf, f, ff, fff)");
             row(ui, "kick snare hihat", "Drum names (channel 10)");
             row(ui, "kick(3,8)", "Euclidean rhythm (hits, steps)");
-            row(ui, "@instrument piano", "Pragma (cell metadata)");
+            row(ui, "# @instrument piano", "Pragma (cell metadata)");
+            row(ui, "# @tempo 120", "Mid-song tempo change");
+            row(ui, "# @time_sig 3 4", "Mid-song time signature change");
+            row(ui, "# @key G major", "Mid-song key change");
             row(ui, "// comment", "Comment line");
         });
 

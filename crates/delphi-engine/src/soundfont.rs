@@ -11,7 +11,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use rustysynth::{SoundFont, Synthesizer, SynthesizerSettings};
 
-use delphi_core::duration::Tempo;
+use delphi_core::duration::TempoMap;
 
 /// Re-export NoteEvent as SfEvent for backward compatibility.
 pub use delphi_core::event::NoteEvent as SfEvent;
@@ -30,7 +30,7 @@ struct TimedMessage {
 pub fn play_with_soundfont(
     sf_path: &Path,
     events: &[SfEvent],
-    tempo: &Tempo,
+    tempo: &TempoMap,
     stop: &Arc<AtomicBool>,
 ) -> Result<(), SfPlaybackError> {
     play_with_soundfont_panned(sf_path, events, tempo, stop, &[0.5; 16])
@@ -40,7 +40,7 @@ pub fn play_with_soundfont(
 pub fn play_with_soundfont_panned(
     sf_path: &Path,
     events: &[SfEvent],
-    tempo: &Tempo,
+    tempo: &TempoMap,
     stop: &Arc<AtomicBool>,
     channel_pan: &[f32; 16],
 ) -> Result<(), SfPlaybackError> {
@@ -51,7 +51,7 @@ pub fn play_with_soundfont_panned(
 pub fn play_with_soundfont_full(
     sf_path: &Path,
     events: &[SfEvent],
-    tempo: &Tempo,
+    tempo: &TempoMap,
     stop: &Arc<AtomicBool>,
     channel_pan: &[f32; 16],
     channel_reverb: &[f32; 16],
@@ -138,7 +138,7 @@ pub fn play_with_soundfont_full(
 pub fn render_to_wav(
     sf_path: &Path,
     events: &[SfEvent],
-    tempo: &Tempo,
+    tempo: &TempoMap,
     output_path: &Path,
 ) -> Result<(), SfPlaybackError> {
     render_to_wav_panned(sf_path, events, tempo, output_path, &[0.5; 16])
@@ -148,7 +148,7 @@ pub fn render_to_wav(
 pub fn render_to_wav_panned(
     sf_path: &Path,
     events: &[SfEvent],
-    tempo: &Tempo,
+    tempo: &TempoMap,
     output_path: &Path,
     channel_pan: &[f32; 16],
 ) -> Result<(), SfPlaybackError> {
@@ -159,7 +159,7 @@ pub fn render_to_wav_panned(
 pub fn render_to_wav_full(
     sf_path: &Path,
     events: &[SfEvent],
-    tempo: &Tempo,
+    tempo: &TempoMap,
     output_path: &Path,
     channel_pan: &[f32; 16],
     channel_reverb: &[f32; 16],
@@ -234,7 +234,7 @@ pub fn render_to_wav_full(
     Ok(())
 }
 
-fn build_messages(events: &[SfEvent], tempo: &Tempo, sample_rate: u32, channel_pan: &[f32; 16], channel_reverb: &[f32; 16], channel_delay: &[f32; 16], channel_volume: &[f32; 16]) -> Vec<TimedMessage> {
+fn build_messages(events: &[SfEvent], tempo: &TempoMap, sample_rate: u32, channel_pan: &[f32; 16], channel_reverb: &[f32; 16], channel_delay: &[f32; 16], channel_volume: &[f32; 16]) -> Vec<TimedMessage> {
     let mut messages = Vec::new();
 
     // Emit per-channel CC messages at sample 0
@@ -484,10 +484,11 @@ impl std::error::Error for SfPlaybackError {}
 #[cfg(test)]
 mod tests {
     use super::*;
+    use delphi_core::duration::Tempo;
 
     #[test]
     fn test_build_messages() {
-        let tempo = Tempo::new(120.0);
+        let tempo = TempoMap::constant(&Tempo::new(120.0));
         let events = vec![
             SfEvent {
                 tick: 0,

@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use std::process;
 
-use delphi_core::duration::TimeSignature;
+use delphi_core::duration::{Tempo, TimeSignature};
 use delphi_core::{Project, NoteEvent};
 use delphi_engine::soundfont::render_to_wav_full;
 use delphi_midi::export::{MidiExporter, MidiTrack};
@@ -204,6 +204,20 @@ fn cmd_export(args: &[String]) {
             numerator: project.settings.time_sig_num,
             denominator: project.settings.time_sig_den,
         });
+
+        // Apply mid-song tempo and time signature changes from meta events
+        for meta in project.collect_meta_events() {
+            match meta {
+                delphi_core::MetaEvent::TempoChange { tick, bpm } => {
+                    exporter.tempo_changes.push((tick, Tempo::new(bpm)));
+                }
+                delphi_core::MetaEvent::TimeSigChange { tick, numerator, denominator } => {
+                    exporter.time_sig_changes.push((tick, TimeSignature::new(numerator, denominator)));
+                }
+                _ => {}
+            }
+        }
+
         for track in collect_and_build_tracks(&events) {
             exporter.add_track(track);
         }
@@ -228,7 +242,7 @@ fn cmd_export(args: &[String]) {
         let reverb = project.channel_reverb_map();
         let delay = project.channel_delay_map();
         let volume = project.channel_volume_map();
-        match render_to_wav_full(&sf_path, &events, &project.tempo(), &wav_path, &pan, &reverb, &delay, &volume) {
+        match render_to_wav_full(&sf_path, &events, &project.tempo_map(), &wav_path, &pan, &reverb, &delay, &volume) {
             Ok(()) => println!("Exported WAV: {}", wav_path.display()),
             Err(e) => eprintln!("WAV export failed: {}", e),
         }
@@ -275,7 +289,7 @@ fn cmd_play(args: &[String]) {
     println!("Playing {} ({}bpm)... Press Ctrl-C to stop.", file, project.settings.bpm);
 
     // Convert NoteEvent to SfEvent (they're the same type via alias)
-    match delphi_engine::play_with_soundfont_full(&sf_path, &events, &project.tempo(), &stop, &pan, &reverb, &delay, &volume) {
+    match delphi_engine::play_with_soundfont_full(&sf_path, &events, &project.tempo_map(), &stop, &pan, &reverb, &delay, &volume) {
         Ok(()) => {}
         Err(e) => eprintln!("Playback error: {}", e),
     }

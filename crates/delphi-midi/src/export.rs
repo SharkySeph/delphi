@@ -46,6 +46,10 @@ pub struct MidiExporter {
     pub tempo: Tempo,
     pub time_signature: TimeSignature,
     pub tracks: Vec<MidiTrack>,
+    /// Mid-song tempo changes (tick, new tempo).
+    pub tempo_changes: Vec<(u32, Tempo)>,
+    /// Mid-song time signature changes (tick, new time_sig).
+    pub time_sig_changes: Vec<(u32, TimeSignature)>,
 }
 
 impl MidiExporter {
@@ -54,6 +58,8 @@ impl MidiExporter {
             tempo: Tempo::default(),
             time_signature: TimeSignature::default(),
             tracks: Vec::new(),
+            tempo_changes: Vec::new(),
+            time_sig_changes: Vec::new(),
         }
     }
 
@@ -85,27 +91,76 @@ impl MidiExporter {
         // --- Tempo track (track 0) ---
         let mut tempo_data = Vec::new();
 
-        // Tempo event at tick 0
-        let uspqn = self.tempo.to_midi_tempo();
-        write_variable_length(&mut tempo_data, 0); // delta time
-        tempo_data.push(0xFF);
-        tempo_data.push(0x51);
-        tempo_data.push(0x03);
-        tempo_data.push((uspqn >> 16) as u8);
-        tempo_data.push((uspqn >> 8) as u8);
-        tempo_data.push(uspqn as u8);
+        // Build a sorted list of all tempo track meta events (tick, raw bytes)
+        let mut meta_events: Vec<(u32, Vec<u8>)> = Vec::new();
 
-        // Time signature event
-        write_variable_length(&mut tempo_data, 0);
-        tempo_data.push(0xFF);
-        tempo_data.push(0x58);
-        tempo_data.push(0x04);
-        tempo_data.push(self.time_signature.numerator);
-        // denominator as power of 2
-        let denom_pow = (self.time_signature.denominator as f32).log2() as u8;
-        tempo_data.push(denom_pow);
-        tempo_data.push(24); // MIDI clocks per metronome tick
-        tempo_data.push(8); // 32nd notes per MIDI quarter note
+        // Initial tempo event at tick 0
+        {
+            let uspqn = self.tempo.to_midi_tempo();
+            let mut bytes = Vec::new();
+            bytes.push(0xFF);
+            bytes.push(0x51);
+            bytes.push(0x03);
+            bytes.push((uspqn >> 16) as u8);
+            bytes.push((uspqn >> 8) as u8);
+            bytes.push(uspqn as u8);
+            meta_events.push((0, bytes));
+        }
+
+        // Initial time signature event at tick 0
+        {
+            let mut bytes = Vec::new();
+            bytes.push(0xFF);
+            bytes.push(0x58);
+            bytes.push(0x04);
+            bytes.push(self.time_signature.numerator);
+            let denom_pow = (self.time_signature.denominator as f32).log2() as u8;
+            bytes.push(denom_pow);
+            bytes.push(24); // MIDI clocks per metronome tick
+            bytes.push(8);  // 32nd notes per MIDI quarter note
+            meta_events.push((0, bytes));
+        }
+
+        // Mid-song tempo changes
+        for (tick, tempo) in &self.tempo_changes {
+            if *tick == 0 { continue; } // already handled above
+            let uspqn = tempo.to_midi_tempo();
+            let mut bytes = Vec::new();
+            bytes.push(0xFF);
+            bytes.push(0x51);
+            bytes.push(0x03);
+            bytes.push((uspqn >> 16) as u8);
+            bytes.push((uspqn >> 8) as u8);
+            bytes.push(uspqn as u8);
+            meta_events.push((*tick, bytes));
+        }
+
+        // Mid-song time signature changes
+        for (tick, ts) in &self.time_sig_changes {
+            if *tick == 0 { continue; } // already handled above
+            let mut bytes = Vec::new();
+            bytes.push(0xFF);
+            bytes.push(0x58);
+            bytes.push(0x04);
+            bytes.push(ts.numerator);
+            let denom_pow = (ts.denominator as f32).log2() as u8;
+            bytes.push(denom_pow);
+            bytes.push(24);
+            bytes.push(8);
+            meta_events.push((*tick, bytes));
+        }
+
+        // Sort by tick (stable sort preserves order of same-tick events)
+        meta_events.sort_by_key(|(tick, _)| *tick);
+
+        // Write all meta events with delta times
+        let mut current_tick = 0u32;
+        for (abs_tick, bytes) in &meta_events {
+            let delta = abs_tick - current_tick;
+            write_variable_length(&mut tempo_data, delta);
+            tempo_data.extend_from_slice(bytes);
+            current_tick = *abs_tick;
+        }
 
         // End of track
         write_variable_length(&mut tempo_data, 0);

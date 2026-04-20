@@ -178,6 +178,19 @@ impl ExportDialog {
                     denominator: studio.settings.time_sig_den,
                 });
 
+                // Apply mid-song tempo and time signature changes from meta events
+                for meta in studio.project.collect_meta_events() {
+                    match meta {
+                        delphi_core::MetaEvent::TempoChange { tick, bpm } => {
+                            exporter.tempo_changes.push((tick, delphi_core::duration::Tempo::new(bpm)));
+                        }
+                        delphi_core::MetaEvent::TimeSigChange { tick, numerator, denominator } => {
+                            exporter.time_sig_changes.push((tick, TimeSignature::new(numerator, denominator)));
+                        }
+                        _ => {}
+                    }
+                }
+
                 // Group events by channel into tracks
                 let mut channel_events: std::collections::HashMap<u8, Vec<&delphi_engine::SfEvent>> =
                     std::collections::HashMap::new();
@@ -213,12 +226,12 @@ impl ExportDialog {
                         return;
                     }
                 };
-                let tempo = studio.tempo();
+                let tempo_map = studio.tempo_map();
                 let pan = studio.channel_pan_map();
                 let reverb = studio.channel_reverb_map();
                 let delay = studio.channel_delay_map();
                 let volume = studio.channel_volume_map();
-                match render_to_wav_full(&sf, &events, &tempo, &path, &pan, &reverb, &delay, &volume) {
+                match render_to_wav_full(&sf, &events, &tempo_map, &path, &pan, &reverb, &delay, &volume) {
                     Ok(()) => self.status = format!("Exported WAV to {}", path.display()),
                     Err(e) => self.status = format!("Error: {}", e),
                 }

@@ -1,4 +1,4 @@
-use delphi_core::duration::{Duration, Tempo};
+use delphi_core::duration::{Duration, TempoMap};
 use delphi_core::dynamics::Velocity;
 
 /// A scheduled audio event: play a note at a specific tick with a duration.
@@ -20,15 +20,14 @@ impl AudioEvent {
         }
     }
 
-    /// Get the start time in seconds for a given tempo.
-    pub fn start_seconds(&self, tempo: &Tempo) -> f64 {
-        let beats = self.tick as f64 / Duration::TICKS_PER_QUARTER as f64;
-        beats * 60.0 / tempo.bpm
+    /// Get the start time in seconds using a tempo map.
+    pub fn start_seconds(&self, tempo: &TempoMap) -> f64 {
+        tempo.tick_to_seconds(self.tick)
     }
 
-    /// Get the duration in seconds for a given tempo.
-    pub fn duration_seconds(&self, tempo: &Tempo) -> f64 {
-        self.duration.to_seconds(tempo)
+    /// Get the duration in seconds using a tempo map.
+    pub fn duration_seconds(&self, tempo: &TempoMap) -> f64 {
+        tempo.tick_range_to_seconds(self.tick, self.duration.ticks)
     }
 }
 
@@ -69,11 +68,10 @@ impl Scheduler {
             .unwrap_or(0)
     }
 
-    /// Total duration in seconds at a given tempo.
-    pub fn total_seconds(&self, tempo: &Tempo) -> f64 {
+    /// Total duration in seconds using a tempo map.
+    pub fn total_seconds(&self, tempo: &TempoMap) -> f64 {
         let ticks = self.total_ticks();
-        let beats = ticks as f64 / Duration::TICKS_PER_QUARTER as f64;
-        beats * 60.0 / tempo.bpm
+        tempo.tick_to_seconds(ticks)
     }
 
     pub fn clear(&mut self) {

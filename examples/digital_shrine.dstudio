@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "title": "Digital Shrine (幽霊の祈り)",
+  "title": "Digital Shrine",
   "settings": {
     "tempo": 58,
     "key": "D minor",
@@ -9,7 +9,7 @@
   "cells": [
     {
       "type": "markdown",
-      "source": "# Digital Shrine (幽霊の祈り)\n\nA slow, ceremonial piece inspired by the shamanic and traditional\nmusic of *Ghost in the Shell* — Kenji Kawai's fusion of ancient\nchant with digital atmosphere.\n\nD minor pentatonic (D F G A C) forms the melodic backbone.\n24 bars at 58 BPM — approximately 100 seconds.\n\n**Instruments:** contrabass drone, choir chant, voice harmony,\nkoto, shamisen, pan flute (shakuhachi), strings, warm pad,\ntimpani (taiko), ritual percussion"
+      "source": "# Digital Shrine (幽霊の祈り)\n\nA slow, ceremonial piece inspired by the shamanic and traditional\nmusic of *Ghost in the Shell* — Kenji Kawai's fusion of ancient\nchant with digital atmosphere.\n\nD minor pentatonic (D F G A C) forms the melodic backbone.\n32 bars at 58 BPM — approximately 132 seconds.\n\n**Instruments:** contrabass drone, choir chant, voice harmony,\nkoto, shamisen, pan flute (shakuhachi), strings, warm pad,\ncelesta, timpani (taiko), ritual percussion"
     },
     {
       "type": "code",
@@ -17,64 +17,73 @@
     },
     {
       "type": "markdown",
-      "source": "## I — The Drone Awakens (bars 1–8)\n\nA deep bass drone and open-fifth strings emerge from silence.\nThe choir begins its modal invocation on bar 3."
+      "source": "## I — The Drone Awakens (bars 1–8)\n\nA deep bass drone and open-fifth strings emerge from silence.\nThe choir begins its modal invocation on bar 3, the harmony\nvoice answering a third below."
     },
     {
       "type": "notation",
-      "source": "# @instrument contrabass\n# @track Bass Drone\n# @velocity 70\n\nD2:w D2:w D2:w D2:w\nA1:w A1:w D2:w D2:w\nD2:w D2:w Bb1:w Bb1:w\nC2:w A1:w D2:w D2:w\nD2:w D2:w D2:w Bb1:w\nC2:w A1:w D2:w D2:w",
+      "source": "# @instrument contrabass\n# @track Bass Drone\n# @velocity 70\n\nD2:w!pp D2:w!pp D2:w!p D2:w!p\nA1:w!p A1:w!mp D2:w!mp D2:w!mp\nD2:w!mp D2:w!mp Bb1:w!mp Bb1:w!mf\nC2:w!mf A1:w!mp D2:w!mp D2:w!mf\nD2:w!mf D2:w!mf D2:w!f Bb1:w!f\nC2:w!f C2:w!f A1:w!mf D2:w!f\nD2:w!mf Bb1:w!mp C2:w!mp A1:w!p\nD2:w!p~ D2:w D2:w!pp D2:w.ferm!ppp",
       "meta": { "label": "Bass Drone", "program": "contrabass" }
     },
     {
       "type": "notation",
-      "source": "# @instrument strings\n# @track Strings\n# @velocity 40\n\nD3,A3:w D3,A3:w D3,A3:w D3,F3,A3:w\nA2,E3:w A2,E3,A3:w D3,A3:w D3,F3,A3:w\nD3,A3:w D3,F3,A3:w Bb2,F3:w Bb2,D3,F3:w\nC3,G3:w A2,E3:w D3,A3:w D3,F3,A3:w\nD3,A3,D4:w D3,F3,A3:w D3,A3:w Bb2,D3,F3:w\nC3,G3:w A2,E3:w D3,A3:w D3,A3:w",
+      "source": "# @instrument strings\n# @track Strings\n# @velocity 40\n\nD3,A3:w!pp D3,A3:w!pp D3,A3:w!p D3,F3,A3:w!p\nA2,E3:w!p A2,E3,A3:w!mp D3,A3:w!mp D3,F3,A3:w!mp\nD3,A3:w!mp D3,F3,A3:w!mp Bb2,F3:w!mp Bb2,D3,F3:w!mf\nC3,G3:w!mf A2,E3:w!mp D3,A3:w!mf D3,F3,A3:w!mf\nD3,A3,D4:w!mf D3,F3,A3,D4:w!f D3,A3,D4:w!f Bb2,D3,F3,Bb3:w!f\nC3,G3,C4:w!f A2,E3,A3:w!f D3,F3,A3,D4:w!f D3,A3,D4:w!f\nD3,A3:w!mf D3,F3,A3:w!mp Bb2,F3:w!p C3,G3:w!p\nA2,E3:w!p~ A2,E3:w D3,A3:w!pp D3,A3:w.ferm!ppp",
       "meta": { "label": "Strings", "program": "strings" }
     },
     {
       "type": "notation",
-      "source": "# @instrument choir\n# @track Chant\n# @velocity 75\n\nr:w r:w D4:w!p D4:h!p F4:h\nA4:w!mp G4:h!mp F4:h D4:w!p r:w\nD4:h!mp F4:h G4:w A4:w!mf C5:h!mf A4:h\nG4:w!mp F4:h!p D4:h D4:w!p r:w\nD5:w!mf C5:h!mf A4:h A4:w!f G4:h!mf F4:h\nD4:w!mp F4:h!p D4:h D4:w!pp D4:w!pp",
+      "source": "# @instrument choir\n# @track Chant\n# @velocity 75\n\nr:w r:w D4:w!pp D4:h!p F4:h\nA4:w!mp G4:h!mp F4:h D4:w!p r:w\nD4:h!mp F4:h G4:w!mf A4:w!mf C5:h!mf A4:h\nG4:w!mp F4:h!p D4:h D4:w!p r:w\nD4:h!mf F4:h A4:w!f C5:w!f A4:h!f G4:h\nD5:w!ff C5:h!f A4:h A4:w!f G4:h!mf F4:h\nD4:w!mf F4:h!mp D4:h D4:w!p C4:h!p D4:h\nD4:w!pp~ D4:w D4:w!pp D4:w.ferm!ppp",
       "meta": { "label": "Chant", "program": "choir" }
     },
     {
       "type": "notation",
-      "source": "# @instrument voice\n# @track Harmony Voice\n# @velocity 60\n\nr:w r:w A3:w!p A3:h!p C4:h\nF4:w!mp D4:h!mp C4:h A3:w!p r:w\nA3:h!mp C4:h D4:w F4:w!mf A4:h!mf F4:h\nD4:w!mp C4:h!p A3:h A3:w!p r:w\nA4:w!mf A4:h!mf F4:h F4:w!f D4:h!mf C4:h\nA3:w!mp C4:h!p A3:h A3:w!pp A3:w!pp",
+      "source": "# @instrument voice\n# @track Harmony Voice\n# @velocity 60\n\nr:w r:w A3:w!pp A3:h!p C4:h\nF4:w!mp D4:h!mp C4:h A3:w!p r:w\nA3:h!mp C4:h D4:w!mf F4:w!mf A4:h!mf F4:h\nD4:w!mp C4:h!p A3:h A3:w!p r:w\nA3:h!mf C4:h F4:w!f A4:w!f F4:h!f D4:h\nA4:w!ff A4:h!f F4:h F4:w!f D4:h!mf C4:h\nA3:w!mp C4:h!mp A3:h A3:w!p G3:h!p A3:h\nA3:w!pp~ A3:w A3:w!pp A3:w.ferm!ppp",
       "meta": { "label": "Harmony Voice", "program": "voice" }
     },
     {
       "type": "markdown",
-      "source": "## II — The Ritual (bars 9–16)\n\nKoto and shamisen enter — ancient instruments voicing a\npentatonic invocation over the chant. The timpani punctuates\nlike distant taiko."
+      "source": "## II — The Ritual (bars 9–16)\n\nKoto and shamisen enter — ancient instruments voicing a\npentatonic invocation over the chant. The timpani punctuates\nlike distant taiko. Triangle and tambourine begin to stir."
     },
     {
       "type": "notation",
-      "source": "# @instrument koto\n# @track Koto\n# @velocity 65\n\nr:w r:w r:w r:w\nD4:8!p r:8 A4:8 r:8 D5:h r:h D5:q A4:q D4:h r:h r:w\nD4:8!mp F4:8 A4:8 D5:8 A4:q D4:q A4:8 C5:8 A4:8 G4:8 F4:q D4:q\nD4:8 G4:8 A4:8 G4:8 D4:h r:w\nr:w r:w D5:h!p A4:h r:w\nD4:8!mf F4:8 G4:8 A4:8 C5:8 A4:8 G4:8 F4:8 D5:8 C5:8 A4:8 G4:8 A4:q r:q\nr:h A4:h D4:h r:h\nD4:q!p r:q A4:h D4:w!pp r:w",
+      "source": "# @instrument koto\n# @track Koto\n# @velocity 65\n\nr:w r:w r:w r:w\nr:w r:w r:w r:w\nD4:8!p r:8 A4:8 r:8 D5:h r:h D5:q A4:q\nD4:8!mp F4:8 A4:8 D5:8 A4:q D4:q A4:8 C5:8 A4:8 G4:8 F4:q D4:q\nD4:8 G4:8 A4:8 G4:8 D4:h r:h A4:h\nD5:h!mp A4:h D4:q!p r:q r:h\nD4:8!mf F4:8 G4:8 A4:8 C5:8.acc A4:8 G4:8 F4:8 D5:8 C5:8 A4:8 G4:8 A4:q r:q\nD5:q.tr!f A4:8 G4:8 F4:q D4:q D4:8 F4:8 A4:8 D5:8 C5:q.ghost A4:q\nD5:h!mp A4:h D4:q!p r:q r:h\nD4:q!pp r:q A4:h D4:w!pp r:w",
       "meta": { "label": "Koto", "program": "koto" }
     },
     {
       "type": "notation",
-      "source": "# @instrument shamisen\n# @track Shamisen\n# @velocity 60\n\nr:w r:w r:w r:w\nr:w r:w r:w r:w\nD3:q!mp r:q A3:q r:q D3:8 F3:8 A3:8 r:8 D3:q r:q\nA3:q D3:q r:h r:w\nD3:q!mp r:q r:q r:q r:w r:w r:w\nD3:q!mf F3:q G3:q A3:q D3:8 A3:8 D4:8 A3:8 G3:q F3:q\nA3:h D3:h r:w\nD3:q!p r:q A3:h D3:w!pp r:w",
+      "source": "# @instrument shamisen\n# @track Shamisen\n# @velocity 60\n\nr:w r:w r:w r:w\nr:w r:w r:w r:w\nr:w r:w D3:q!mp r:q A3:q r:q\nD3:8 F3:8 A3:8 r:8 D3:q r:q A3:q D3:q r:h\nr:w D3:q!mp r:q r:h\nD3:q!mf F3:q G3:q A3:q D3:8.acc A3:8 D4:8 A3:8 G3:q F3:q\nA3:h D3:h D3:8!mf F3:8 A3:8 r:8 D3:q r:q\nD3:q!f A3:q D4:q A3:q D3:8.acc F3:8 G3:8 A3:8 D4:q D3:q\nD3:q!mp r:q A3:h D3:q!p r:q r:h\nD3:q!pp r:q A3:h D3:w!pp r:w",
       "meta": { "label": "Shamisen", "program": "shamisen" }
     },
     {
       "type": "markdown",
-      "source": "## III — Transcendence (bars 17–24)\n\nThe shakuhachi cries across the void. Ceremonial drums rise.\nA digital pad shimmers beneath the ancient voices before\neverything dissolves into a final sustained drone."
+      "source": "## III — The Offering (bars 17–24)\n\nThe shakuhachi cries across the void. A digital pad shimmers\nbeneath the ancient voices. Crystalline celesta notes glint\nlike moonlight through incense smoke. The taiko drives toward\nthe climax."
     },
     {
       "type": "notation",
-      "source": "# @instrument pan flute\n# @track Shakuhachi\n# @velocity 55\n\nr:w r:w r:w r:w\nr:w r:w r:w r:w\nr:w r:w r:w r:w\nr:w r:w D5:w!p r:w\nD5:h!mp F5:h G5:w!mf A5:h!f G5:8 F5:8 r:q\nD5:w!mp r:h D5:h D5:w!pp r:w",
+      "source": "# @instrument pan flute\n# @track Shakuhachi\n# @velocity 55\n\nr:w r:w r:w r:w\nr:w r:w r:w r:w\nr:w r:w r:w r:w\nr:w r:w D5:w!p r:w\nD5:h!mp F5:h G5:w!mf A5:h!f G5:8 F5:8 r:q\nD5:w!mp r:h D5:h D5:h!mf F5:h G5:q!f A5:q G5:q F5:q\nD5:h!mf~ D5:h C5:h!mp A4:h\nD5:w!p r:h D5:h!pp D5:w!ppp r:w",
       "meta": { "label": "Shakuhachi", "program": "pan flute" }
     },
     {
       "type": "notation",
-      "source": "# @instrument warm pad\n# @track Digital Veil\n# @velocity 35\n\nr:w r:w r:w r:w\nr:w r:w r:w r:w\nr:w r:w r:w r:w\nr:w r:w D4,A4:w!pp D4,A4:w!pp\nD4,F4,A4:w!p D4,G4,Bb4:w!p D4,F4,A4:w!mp D3,A3:w!p\nD3,A3:w!pp r:w r:w r:w",
+      "source": "# @instrument warm pad\n# @track Digital Veil\n# @velocity 35\n\nr:w r:w r:w r:w\nr:w r:w r:w r:w\nr:w r:w r:w r:w\nr:w r:w D4,A4:w!pp D4,A4:w!pp\nD4,F4,A4:w!p D4,G4,Bb4:w!p D4,F4,A4:w!mp D3,A3:w!p\nD4,F4,A4,D5:w!mp D4,G4,Bb4:w!mp C4,F4,A4:w!p D3,A3,D4:w!p\nD3,A3:w!pp r:w r:w\nr:w",
       "meta": { "label": "Digital Veil", "program": "warm pad" }
     },
     {
       "type": "notation",
-      "source": "# @instrument timpani\n# @track Taiko\n# @velocity 80\n\nr:w r:w r:w r:w\nr:w r:w r:w r:w\nD2:w!mp r:w D2:h!mf r:h D2:q r:q r:h\nA1:w!mf r:w D2:w!f r:w\nD2:h!f D2:q D2:q D2:w!ff D2:h!mf r:h r:w\nD2:q!mp r:q r:h r:w D2:w!p r:w",
+      "source": "# @instrument celesta\n# @track Spirit Bells\n# @velocity 50\n\nr:w r:w r:w r:w\nr:w r:w r:w r:w\nr:w r:w r:w r:w\nr:w r:w r:w D6:8!pp r:8 A5:8 r:8 r:h\nD6:8!p r:8 F6:8 r:8 D6:h r:h A5:8!p r:8 D6:8 r:8\nF6:8!mp r:8 D6:8 A5:8 D6:h r:w\nD6:8!mp A5:8 F5:8 r:8 D6:h.ghost A5:8!p r:8 D6:8 r:8 F6:q r:q\nD6:q!pp r:q r:h r:w r:w r:w",
+      "meta": { "label": "Spirit Bells", "program": "celesta" }
+    },
+    {
+      "type": "markdown",
+      "source": "## IV — Transcendence (bars 25–32)\n\nCeremonial drums rise to their peak then recede. Instruments\ndissolve one by one into a final sustained drone. The last\nnote hangs — a fermata hovering between worlds."
+    },
+    {
+      "type": "notation",
+      "source": "# @instrument timpani\n# @track Taiko\n# @velocity 80\n\nr:w r:w r:w r:w\nr:w r:w r:w r:w\nD2:w!mp r:w D2:h!mf r:h D2:q r:q r:h\nA1:w!mf r:w D2:w!f r:w\nD2:h!f D2:q D2:q D2:w!ff D2:h!f r:h r:w\nD2:h!ff D2:q.acc D2:q A1:w!ff D2:q!f D2:q D2:q D2:q D2:w!ff\nD2:h!f D2:h D2:w!mf D2:q!mp r:q r:h r:w\nD2:w!p r:w r:w r:w",
       "meta": { "label": "Taiko", "program": "timpani" }
     },
     {
       "type": "notation",
-      "source": "# @instrument drums\n# @track Ritual Percussion\n# @channel 9\n\nr:w r:w r:w r:w\nr:w r:w r:w r:w\nr:w r:w tri:w r:w\ntri:h r:h tamb:w r:w r:w\n{tri(3,8) tamb(2,8)}\n{tri(3,8) tamb(2,8)}\ntri:h r:h r:w\nr:w r:w tri:w r:w",
+      "source": "# @instrument drums\n# @track Ritual Percussion\n# @channel 9\n\nr:w r:w r:w r:w\nr:w r:w r:w r:w\nr:w r:w tri:w r:w\ntri:h r:h tamb:w r:w r:w\n{tri(3,8) tamb(2,8)}\n{tri(3,8) tamb(2,8)}\ntri:h r:h r:w\n{tri(5,8) tamb(3,8)}\n{tri(5,8) tamb(3,8) rim(2,8)}\n{tri(5,8) tamb(3,8)}\ntri:h tamb:h\n{tri(3,8) tamb(2,8)}\n{tri(3,8) tamb(2,8)}\ntri:w r:w\ntri:w r:w r:w r:w",
       "meta": { "label": "Ritual Percussion", "channel": 9 }
     }
   ]

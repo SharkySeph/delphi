@@ -1,5 +1,6 @@
 use egui::{Color32, Pos2, Rect, Stroke, Vec2};
 
+use delphi_core::duration::TempoMap;
 use delphi_engine::SfEvent;
 
 /// Real-time audio visualizer: waveform display and "now playing" event view.
@@ -55,20 +56,15 @@ impl Visualizer {
     }
 
     /// Update playback state from the transport.
-    pub fn update_playback(&mut self, events: &[SfEvent], elapsed_secs: f64, bpm: f64, playing: bool) {
+    pub fn update_playback(&mut self, events: &[SfEvent], elapsed_secs: f64, tempo_map: &TempoMap, playing: bool) {
         self.is_playing = playing;
         if playing {
-            // Accumulate ticks incrementally so BPM changes don't cause jumps
-            let dt = if self.last_elapsed > 0.0 {
-                (elapsed_secs - self.last_elapsed).max(0.0)
-            } else {
-                elapsed_secs
-            };
+            // Use the tempo map to convert elapsed time to the current tick
+            self.current_tick = tempo_map.seconds_to_tick(elapsed_secs);
             self.last_elapsed = elapsed_secs;
-            let ticks_per_beat = 480.0;
-            let beats_per_sec = bpm / 60.0;
-            self.current_tick += (dt * beats_per_sec * ticks_per_beat) as u32;
             self.playing_events = events.to_vec();
+
+            let bpm = tempo_map.bpm_at_tick(self.current_tick);
 
             // Generate synthetic waveform from active notes
             self.generate_waveform_from_events(events, elapsed_secs, bpm);

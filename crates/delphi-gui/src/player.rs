@@ -3,7 +3,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
 
-use delphi_core::duration::{Duration, Tempo};
+use delphi_core::duration::{Duration, Tempo, TempoMap};
 use delphi_core::dynamics::Velocity;
 use delphi_engine::scheduler::AudioEvent;
 use delphi_engine::soundfont::{play_with_soundfont_full, SfEvent};
@@ -71,12 +71,12 @@ impl TransportState {
         sf_path: Option<&PathBuf>,
         master_gain: f32,
     ) {
-        let tempo = self.effective_tempo(studio);
+        let tempo_map = self.effective_tempo_map(studio);
         let pan = studio.channel_pan_map();
         let reverb = studio.channel_reverb_map();
         let delay = studio.channel_delay_map();
         let volume = studio.channel_volume_map();
-        self.play_events(studio.collect_events_mixed(None, master_gain), tempo, stop_flag, sf_path, pan, reverb, delay, volume);
+        self.play_events(studio.collect_events_mixed(None, master_gain), tempo_map, stop_flag, sf_path, pan, reverb, delay, volume);
     }
 
     /// Play a single cell by index.
@@ -88,26 +88,26 @@ impl TransportState {
         sf_path: Option<&PathBuf>,
         master_gain: f32,
     ) {
-        let tempo = self.effective_tempo(studio);
+        let tempo_map = self.effective_tempo_map(studio);
         let pan = studio.channel_pan_map();
         let reverb = studio.channel_reverb_map();
         let delay = studio.channel_delay_map();
         let volume = studio.channel_volume_map();
-        self.play_events(studio.collect_events_mixed(Some(cell_idx), master_gain), tempo, stop_flag, sf_path, pan, reverb, delay, volume);
+        self.play_events(studio.collect_events_mixed(Some(cell_idx), master_gain), tempo_map, stop_flag, sf_path, pan, reverb, delay, volume);
     }
 
-    /// Resolve effective tempo: bpm_override if set, otherwise project tempo.
-    fn effective_tempo(&self, studio: &StudioState) -> Tempo {
+    /// Resolve effective tempo map: bpm_override if set, otherwise project tempo map.
+    fn effective_tempo_map(&self, studio: &StudioState) -> TempoMap {
         match self.bpm_override {
-            Some(bpm) => Tempo { bpm },
-            None => studio.tempo(),
+            Some(bpm) => TempoMap::constant(&Tempo { bpm }),
+            None => studio.tempo_map(),
         }
     }
 
     fn play_events(
         &mut self,
         mut events: Vec<SfEvent>,
-        tempo: Tempo,
+        tempo_map: TempoMap,
         stop_flag: &Arc<AtomicBool>,
         sf_path: Option<&PathBuf>,
         channel_pan: [f32; 16],
@@ -153,7 +153,7 @@ impl TransportState {
         std::thread::spawn(move || {
             if sf.is_file() {
                 loop {
-                    let _ = play_with_soundfont_full(&sf, &events, &tempo, &stop, &channel_pan, &channel_reverb, &channel_delay, &channel_volume);
+                    let _ = play_with_soundfont_full(&sf, &events, &tempo_map, &stop, &channel_pan, &channel_reverb, &channel_delay, &channel_volume);
                     if !looping || stop.load(Ordering::Relaxed) {
                         break;
                     }
@@ -171,7 +171,7 @@ impl TransportState {
                     })
                     .collect();
                 let output = AudioOutput::new();
-                let _ = output.play_events(&audio_events, &tempo, &stop);
+                let _ = output.play_events(&audio_events, &tempo_map, &stop);
             }
             done.store(true, Ordering::SeqCst);
         });

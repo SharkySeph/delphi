@@ -1,7 +1,7 @@
 use rand::Rng;
 
 use crate::chord::parse_quality;
-use crate::event::NoteEvent;
+use crate::event::{MetaEvent, NoteEvent};
 use crate::gm::{drum_name_to_midi, gm_program_from_name};
 use crate::{Chord, ChordQuality, Duration, Dynamic, Key, Note, Scale};
 
@@ -391,7 +391,25 @@ pub fn parse_notation_to_events_ts(
     time_sig_den: u8,
     key: Option<&str>,
 ) -> Vec<NoteEvent> {
+    let (events, _meta) = parse_notation_full(
+        source, channel, program, default_velocity,
+        time_sig_num, time_sig_den, key,
+    );
+    events
+}
+
+/// Parse notation returning both note events and meta events (tempo/time_sig/key changes).
+pub fn parse_notation_full(
+    source: &str,
+    channel: u8,
+    program: u8,
+    default_velocity: u8,
+    time_sig_num: u8,
+    time_sig_den: u8,
+    key: Option<&str>,
+) -> (Vec<NoteEvent>, Vec<MetaEvent>) {
     let mut events: Vec<NoteEvent> = Vec::new();
+    let mut meta_events: Vec<MetaEvent> = Vec::new();
     let mut tick: u32 = 0;
     let mut current_duration: u32 = 480;
     let mut velocity = default_velocity;
@@ -440,46 +458,116 @@ pub fn parse_notation_to_events_ts(
     });
 
     if is_bar_notation {
-        // Pick up any # @key or key() directives for bar notation
-        for line in source.lines() {
-            let line = line.trim();
-            if let Some(rest) = line.strip_prefix("# @key ") {
-                if let Ok(k) = rest.trim().parse::<Key>() {
-                    current_scale = Some(k.to_scale(4));
-                }
-            } else if let Some(rest) = line.strip_prefix("key(").and_then(|r| r.strip_suffix(')')) {
-                if let Ok(k) = rest.trim().parse::<Key>() {
-                    current_scale = Some(k.to_scale(4));
-                }
-            }
-        }
-
-        let beat_ticks = 480u32 * 4 / time_sig_den.max(1) as u32;
-        let measure_ticks = beat_ticks * time_sig_num as u32;
-        let bar_text: String = notation_lines.join(" ");
-        let bars: Vec<&str> = bar_text.split('|')
-            .map(|b| b.trim())
-            .filter(|b| !b.is_empty())
-            .collect();
+        // Process line-by-line to handle mid-piece pragmas between bar lines.
+        let mut current_time_sig_num = time_sig_num;
+        let mut current_time_sig_den = time_sig_den;
 
         let mut tick: u32 = 0;
         let mut cresc_ramp: Option<(u8, u8, usize, usize)> = None;
         let mut tie_accum: u32 = 0;
 
-        for bar_str in bars {
-            let tokens: Vec<&str> = bar_str.split_whitespace().collect();
-            if tokens.is_empty() {
-                tick += measure_ticks;
+        for line in source.lines() {
+            let line = line.trim();
+            if line.is_empty() || line.starts_with("//") {
                 continue;
             }
-            let ticks_per_token = measure_ticks / tokens.len() as u32;
-            for token in tokens {
-                let prev_len = events.len();
-                emit_token(token, &mut events, &mut tick, ticks_per_token, velocity, channel, program, &mut tie_accum, current_scale.as_ref());
-                apply_ramp(&mut events, prev_len, &mut cresc_ramp);
+
+            // Mid-piece key change
+            if let Some(rest) = line.strip_prefix("# @key ") {
+                if let Ok(k) = rest.trim().parse::<Key>() {
+                    current_scale = Some(k.to_scale(4));
+                    meta_events.push(MetaEvent::KeyChange { tick, key_name: rest.trim().to_string() });
+                }
+                continue;
+            }
+            if let Some(rest) = line.strip_prefix("key(").and_then(|r| r.strip_suffix(')')) {
+                let k_str = rest.trim().trim_matches('"').trim_matches('\'');
+                if let Ok(k) = k_str.parse::<Key>() {
+                    current_scale = Some(k.to_scale(4));
+                    meta_events.push(MetaEvent::KeyChange { tick, key_name: k_str.to_string() });
+                }
+                continue;
+            }
+
+            // Mid-piece tempo change
+            if let Some(rest) = line.strip_prefix("# @tempo ") {
+                if let Ok(bpm) = rest.trim().parse::<f64>() {
+                    meta_events.push(MetaEvent::TempoChange { tick, bpm });
+                }
+                continue;
+            }
+            if let Some(rest) = line.strip_prefix("tempo(").and_then(|r| r.strip_suffix(')')) {
+                if let Ok(bpm) = rest.trim().parse::<f64>() {
+                    meta_events.push(MetaEvent::TempoChange { tick, bpm });
+                }
+                continue;
+            }
+
+            // Mid-piece time signature change
+            if let Some(rest) = line.strip_prefix("# @time_sig ") {
+                let parts: Vec<&str> = rest.trim().split_whitespace().collect();
+                if parts.len() == 2 {
+                    if let (Ok(n), Ok(d)) = (parts[0].parse::<u8>(), parts[1].parse::<u8>()) {
+                        current_time_sig_num = n;
+                        current_time_sig_den = d;
+                        meta_events.push(MetaEvent::TimeSigChange { tick, numerator: n, denominator: d });
+                    }
+                }
+                // Also support N/D format
+                let slash_parts: Vec<&str> = rest.trim().split('/').collect();
+                if slash_parts.len() == 2 {
+                    if let (Ok(n), Ok(d)) = (slash_parts[0].trim().parse::<u8>(), slash_parts[1].trim().parse::<u8>()) {
+                        current_time_sig_num = n;
+                        current_time_sig_den = d;
+                        meta_events.push(MetaEvent::TimeSigChange { tick, numerator: n, denominator: d });
+                    }
+                }
+                continue;
+            }
+            if let Some(rest) = line.strip_prefix("time_sig(").and_then(|r| r.strip_suffix(')')) {
+                let parts: Vec<&str> = rest.split(',').collect();
+                if parts.len() == 2 {
+                    if let (Ok(n), Ok(d)) = (parts[0].trim().parse::<u8>(), parts[1].trim().parse::<u8>()) {
+                        current_time_sig_num = n;
+                        current_time_sig_den = d;
+                        meta_events.push(MetaEvent::TimeSigChange { tick, numerator: n, denominator: d });
+                    }
+                }
+                continue;
+            }
+
+            // Skip other pragmas and directives
+            if line.starts_with('#') || line.starts_with('@') {
+                continue;
+            }
+            if line.starts_with("swing(") || line.starts_with("humanize(") {
+                continue;
+            }
+
+            // This line contains bar notation — process bars
+            let beat_ticks = 480u32 * 4 / current_time_sig_den.max(1) as u32;
+            let measure_ticks = beat_ticks * current_time_sig_num as u32;
+
+            let bars: Vec<&str> = line.split('|')
+                .map(|b| b.trim())
+                .filter(|b| !b.is_empty())
+                .collect();
+
+            for bar_str in bars {
+                let tokens: Vec<&str> = bar_str.split_whitespace().collect();
+                if tokens.is_empty() {
+                    tick += measure_ticks;
+                    continue;
+                }
+                let ticks_per_token = measure_ticks / tokens.len() as u32;
+                for token in tokens {
+                    let prev_len = events.len();
+                    emit_token(token, &mut events, &mut tick, ticks_per_token, velocity, channel, program, &mut tie_accum, current_scale.as_ref());
+                    apply_ramp(&mut events, prev_len, &mut cresc_ramp);
+                }
             }
         }
-        return events;
+        return (events, meta_events);
     }
 
     // Flatten source into token stream
@@ -499,11 +587,28 @@ pub fn parse_notation_to_events_ts(
             all_tokens.push(format!("__key__{}", rest.trim()));
             continue;
         }
+        // Mid-piece tempo change: inject sentinel token
+        if let Some(rest) = line.strip_prefix("# @tempo ") {
+            all_tokens.push(format!("__tempo__{}", rest.trim()));
+            continue;
+        }
+        if let Some(rest) = line.strip_prefix("tempo(").and_then(|r| r.strip_suffix(')')) {
+            all_tokens.push(format!("__tempo__{}", rest.trim()));
+            continue;
+        }
+        // Mid-piece time signature change: inject sentinel token
+        if let Some(rest) = line.strip_prefix("# @time_sig ") {
+            all_tokens.push(format!("__time_sig__{}", rest.trim()));
+            continue;
+        }
+        if let Some(rest) = line.strip_prefix("time_sig(").and_then(|r| r.strip_suffix(')')) {
+            all_tokens.push(format!("__time_sig__{}", rest.trim().replace(',', " ")));
+            continue;
+        }
         if line.starts_with('#') || line.starts_with('@') {
             continue;
         }
-        if line.starts_with("tempo(")
-            || line.starts_with("time_sig(") || line.starts_with("swing(")
+        if line.starts_with("swing(")
             || line.starts_with("humanize(")
         {
             continue;
@@ -548,6 +653,35 @@ pub fn parse_notation_to_events_ts(
         if let Some(key_str) = raw.strip_prefix("__key__") {
             if let Ok(k) = key_str.parse::<Key>() {
                 current_scale = Some(k.to_scale(4));
+                meta_events.push(MetaEvent::KeyChange { tick, key_name: key_str.to_string() });
+            }
+            i += 1;
+            continue;
+        }
+
+        // ── Mid-piece tempo change sentinel ──
+        if let Some(bpm_str) = raw.strip_prefix("__tempo__") {
+            if let Ok(bpm) = bpm_str.parse::<f64>() {
+                meta_events.push(MetaEvent::TempoChange { tick, bpm });
+            }
+            i += 1;
+            continue;
+        }
+
+        // ── Mid-piece time signature change sentinel ──
+        if let Some(ts_str) = raw.strip_prefix("__time_sig__") {
+            let parts: Vec<&str> = ts_str.split_whitespace().collect();
+            if parts.len() == 2 {
+                if let (Ok(n), Ok(d)) = (parts[0].parse::<u8>(), parts[1].parse::<u8>()) {
+                    meta_events.push(MetaEvent::TimeSigChange { tick, numerator: n, denominator: d });
+                }
+            }
+            // Also support N/D format
+            let slash_parts: Vec<&str> = ts_str.split('/').collect();
+            if slash_parts.len() == 2 {
+                if let (Ok(n), Ok(d)) = (slash_parts[0].trim().parse::<u8>(), slash_parts[1].trim().parse::<u8>()) {
+                    meta_events.push(MetaEvent::TimeSigChange { tick, numerator: n, denominator: d });
+                }
             }
             i += 1;
             continue;
@@ -774,7 +908,7 @@ pub fn parse_notation_to_events_ts(
         i += 1;
     }
 
-    events
+    (events, meta_events)
 }
 
 /// Emit events for a single token.
@@ -1760,5 +1894,110 @@ mod tests {
         assert_eq!(parse_roman_prefix("V7"), Some((5, true, "7")));
         assert_eq!(parse_roman_prefix("C4"), None); // Not a Roman numeral
         assert_eq!(parse_roman_prefix("Am"), None);
+    }
+
+    #[test]
+    fn test_tempo_change_free_notation() {
+        // Tempo change in free notation emits a MetaEvent
+        let source = "C4\n# @tempo 140\nD4";
+        let (events, meta) = parse_notation_full(source, 0, 0, 80, 4, 4, None);
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[0].midi_note, 60); // C4
+        assert_eq!(events[1].midi_note, 62); // D4
+        assert_eq!(meta.len(), 1);
+        match &meta[0] {
+            MetaEvent::TempoChange { tick, bpm } => {
+                assert_eq!(*tick, 480); // After one quarter note
+                assert!((bpm - 140.0).abs() < 0.01);
+            }
+            _ => panic!("Expected TempoChange"),
+        }
+    }
+
+    #[test]
+    fn test_time_sig_change_free_notation() {
+        // Time sig change in free notation emits a MetaEvent
+        let source = "C4\n# @time_sig 3 4\nD4";
+        let (events, meta) = parse_notation_full(source, 0, 0, 80, 4, 4, None);
+        assert_eq!(events.len(), 2);
+        assert_eq!(meta.len(), 1);
+        match &meta[0] {
+            MetaEvent::TimeSigChange { tick, numerator, denominator } => {
+                assert_eq!(*tick, 480);
+                assert_eq!(*numerator, 3);
+                assert_eq!(*denominator, 4);
+            }
+            _ => panic!("Expected TimeSigChange"),
+        }
+    }
+
+    #[test]
+    fn test_time_sig_change_bar_notation() {
+        // Time sig change in bar notation changes bar duration
+        let source = "| C4 D4 E4 F4 |\n# @time_sig 3 4\n| G4 A4 B4 |";
+        let (events, meta) = parse_notation_full(source, 0, 0, 80, 4, 4, None);
+        // First bar: 4/4, 4 notes = 480 ticks each (1920 total)
+        assert_eq!(events[0].duration_ticks, 480);
+        // Second bar: 3/4, 3 notes = 480 ticks each (1440 total)
+        assert_eq!(events[4].tick, 1920); // starts after first bar
+        assert_eq!(events[4].duration_ticks, 480);
+        assert_eq!(meta.len(), 1);
+        match &meta[0] {
+            MetaEvent::TimeSigChange { tick, numerator, denominator } => {
+                assert_eq!(*tick, 1920);
+                assert_eq!(*numerator, 3);
+                assert_eq!(*denominator, 4);
+            }
+            _ => panic!("Expected TimeSigChange"),
+        }
+    }
+
+    #[test]
+    fn test_tempo_change_bar_notation() {
+        // Tempo change between bars emits meta event at correct tick
+        let source = "| I | IV |\n# @tempo 160\n| V | I |";
+        let (events, meta) = parse_notation_full(source, 0, 0, 80, 4, 4, Some("C major"));
+        // 4 bars × 3 notes each = 12 events
+        assert_eq!(events.len(), 12);
+        assert_eq!(meta.len(), 1);
+        match &meta[0] {
+            MetaEvent::TempoChange { tick, bpm } => {
+                // After 2 bars of 4/4 = 2 × 1920 = 3840 ticks
+                assert_eq!(*tick, 3840);
+                assert!((bpm - 160.0).abs() < 0.01);
+            }
+            _ => panic!("Expected TempoChange"),
+        }
+    }
+
+    #[test]
+    fn test_tempo_inline_function_syntax() {
+        // tempo(120) syntax in free notation
+        let source = "C4\ntempo(120)\nD4";
+        let (events, meta) = parse_notation_full(source, 0, 0, 80, 4, 4, None);
+        assert_eq!(events.len(), 2);
+        assert_eq!(meta.len(), 1);
+        match &meta[0] {
+            MetaEvent::TempoChange { bpm, .. } => {
+                assert!((bpm - 120.0).abs() < 0.01);
+            }
+            _ => panic!("Expected TempoChange"),
+        }
+    }
+
+    #[test]
+    fn test_time_sig_slash_format() {
+        // # @time_sig 3/4 format
+        let source = "C4\n# @time_sig 3/4\nD4";
+        let (events, meta) = parse_notation_full(source, 0, 0, 80, 4, 4, None);
+        assert_eq!(events.len(), 2);
+        assert_eq!(meta.len(), 1);
+        match &meta[0] {
+            MetaEvent::TimeSigChange { numerator, denominator, .. } => {
+                assert_eq!(*numerator, 3);
+                assert_eq!(*denominator, 4);
+            }
+            _ => panic!("Expected TimeSigChange"),
+        }
     }
 }

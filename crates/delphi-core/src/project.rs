@@ -2,10 +2,10 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-use crate::duration::Tempo;
-use crate::event::NoteEvent;
+use crate::duration::{Tempo, TempoMap};
+use crate::event::{MetaEvent, NoteEvent};
 use crate::gm::gm_program_from_name;
-use crate::notation::{apply_humanize, apply_swing, parse_notation_to_events_ts};
+use crate::notation::{apply_humanize, apply_swing, parse_notation_to_events_ts, parse_notation_full};
 
 /// A single cell in the studio notebook.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -96,6 +96,24 @@ impl TrackState {
     }
 }
 
+/// A global timeline event applied to all tracks at a specific bar position.
+/// These are stored on the project and resolved to tick-based MetaEvents at export time.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TimelineEntry {
+    /// Bar number (1-indexed) where this event occurs.
+    pub bar: u32,
+    /// The kind of timeline change.
+    pub event: TimelineEventKind,
+}
+
+/// The kind of change in a timeline entry.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum TimelineEventKind {
+    Tempo(f64),
+    TimeSig(u8, u8),
+    Key(String),
+}
+
 /// Project settings persisted with the .dstudio file.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProjectSettings {
@@ -107,6 +125,9 @@ pub struct ProjectSettings {
     pub swing: f32,
     pub humanize: f32,
     pub soundfont_path: Option<String>,
+    /// Global timeline events (tempo, time_sig, key changes by bar number).
+    #[serde(default)]
+    pub timeline: Vec<TimelineEntry>,
 }
 
 impl Default for ProjectSettings {
@@ -120,6 +141,7 @@ impl Default for ProjectSettings {
             swing: 0.0,
             humanize: 0.0,
             soundfont_path: None,
+            timeline: Vec::new(),
         }
     }
 }
@@ -143,6 +165,13 @@ impl Project {
 
     pub fn tempo(&self) -> Tempo {
         Tempo { bpm: self.settings.bpm }
+    }
+
+    /// Build a TempoMap from the project's initial tempo + all meta events.
+    pub fn tempo_map(&self) -> TempoMap {
+        let tempo = self.tempo();
+        let meta = self.collect_meta_events();
+        TempoMap::from_meta_events(&tempo, &meta)
     }
 
     /// Save project state to a .dstudio JSON file.
@@ -595,5 +624,83 @@ impl Project {
         });
 
         all_events
+    }
+
+    /// Collect meta events from all cells and the project timeline.
+    ///
+    /// Returns a sorted list of MetaEvents (tempo, time_sig, key changes) with
+    /// tick positions. This merges:
+    /// 1. Cell-level pragmas (`# @tempo`, `# @time_sig`, `# @key` within notation)
+    /// 2. Project-level timeline entries (bar-based, converted to ticks)
+    pub fn collect_meta_events(&self) -> Vec<MetaEvent> {
+        let mut all_meta: Vec<MetaEvent> = Vec::new();
+
+        // Collect from cell-level pragmas
+        for cell in &self.cells {
+            if cell.cell_type != "notation" || cell.source.trim().is_empty() {
+                continue;
+            }
+            let program = gm_program_from_name(&cell.instrument);
+            let key_str = &self.settings.key_name;
+            let key_opt = if key_str.is_empty() { None } else { Some(key_str.as_str()) };
+            let (_events, meta) = parse_notation_full(
+                &cell.source, cell.channel, program, cell.velocity,
+                self.settings.time_sig_num, self.settings.time_sig_den,
+                key_opt,
+            );
+            all_meta.extend(meta);
+        }
+
+        // Convert project-level timeline entries (bar-based) to tick-based MetaEvents.
+        // Walk through the timeline sorted by bar, tracking time signature changes
+        // to correctly compute tick offsets.
+        let mut sorted_timeline = self.settings.timeline.clone();
+        sorted_timeline.sort_by_key(|e| e.bar);
+
+        let mut current_num = self.settings.time_sig_num;
+        let mut current_den = self.settings.time_sig_den;
+        let mut current_bar: u32 = 1;
+        let mut current_tick: u32 = 0;
+
+        for entry in &sorted_timeline {
+            // Advance ticks from current_bar to entry.bar using current time signature
+            if entry.bar > current_bar {
+                let bars_to_advance = entry.bar - current_bar;
+                let beat_ticks = 480u32 * 4 / current_den.max(1) as u32;
+                let measure_ticks = beat_ticks * current_num as u32;
+                current_tick += bars_to_advance * measure_ticks;
+                current_bar = entry.bar;
+            }
+
+            match &entry.event {
+                TimelineEventKind::Tempo(bpm) => {
+                    all_meta.push(MetaEvent::TempoChange { tick: current_tick, bpm: *bpm });
+                }
+                TimelineEventKind::TimeSig(n, d) => {
+                    all_meta.push(MetaEvent::TimeSigChange { tick: current_tick, numerator: *n, denominator: *d });
+                    current_num = *n;
+                    current_den = *d;
+                }
+                TimelineEventKind::Key(key_name) => {
+                    all_meta.push(MetaEvent::KeyChange { tick: current_tick, key_name: key_name.clone() });
+                }
+            }
+        }
+
+        // Deduplicate: prefer the latest event at each tick for each type
+        all_meta.sort_by_key(|e| match e {
+            MetaEvent::TempoChange { tick, .. } => (*tick, 0),
+            MetaEvent::TimeSigChange { tick, .. } => (*tick, 1),
+            MetaEvent::KeyChange { tick, .. } => (*tick, 2),
+        });
+        all_meta.dedup_by(|a, b| {
+            let tick_a = match a { MetaEvent::TempoChange { tick, .. } | MetaEvent::TimeSigChange { tick, .. } | MetaEvent::KeyChange { tick, .. } => *tick };
+            let tick_b = match b { MetaEvent::TempoChange { tick, .. } | MetaEvent::TimeSigChange { tick, .. } | MetaEvent::KeyChange { tick, .. } => *tick };
+            let type_a = match a { MetaEvent::TempoChange { .. } => 0, MetaEvent::TimeSigChange { .. } => 1, MetaEvent::KeyChange { .. } => 2 };
+            let type_b = match b { MetaEvent::TempoChange { .. } => 0, MetaEvent::TimeSigChange { .. } => 1, MetaEvent::KeyChange { .. } => 2 };
+            tick_a == tick_b && type_a == type_b
+        });
+
+        all_meta
     }
 }

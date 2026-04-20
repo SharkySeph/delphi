@@ -1,5 +1,5 @@
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use delphi_core::duration::Tempo;
+use delphi_core::duration::TempoMap;
 use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -31,7 +31,7 @@ impl AudioOutput {
     pub fn play_events(
         &self,
         events: &[AudioEvent],
-        tempo: &Tempo,
+        tempo: &TempoMap,
         stop: &Arc<AtomicBool>,
     ) -> Result<(), AudioOutputError> {
         let host = cpal::default_host();
