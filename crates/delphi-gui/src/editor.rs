@@ -1,7 +1,7 @@
 use egui::text::LayoutJob;
 use egui::{Color32, FontId, TextFormat};
 
-use crate::studio::{StudioState, GM_INSTRUMENT_NAMES};
+use crate::studio::StudioState;
 
 /// Syntax token types for .delphi notation coloring.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -286,17 +286,10 @@ impl EditorState {
                             );
                         }
 
-                        // Instrument selector
+                        // Instrument selector (filterable)
                         if cell.cell_type != "markdown" {
                             let prev = cell.instrument.clone();
-                            egui::ComboBox::from_id_salt(format!("cell_inst_{}", idx))
-                                .selected_text(format!("🎵 {}", cell.instrument))
-                                .width(120.0)
-                                .show_ui(ui, |ui| {
-                                    for &name in GM_INSTRUMENT_NAMES {
-                                        ui.selectable_value(&mut cell.instrument, name.to_string(), name);
-                                    }
-                                });
+                            StudioState::instrument_combo(ui, format!("cell_inst_{}", idx), &mut cell.instrument);
                             if cell.instrument != prev {
                                 // Force diagnostics re-check and clear stale output
                                 if idx < self.cell_hashes.len() {
@@ -308,17 +301,17 @@ impl EditorState {
                         }
 
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            if ui.small_button("🗑").clicked() {
+                            if ui.small_button("🗑").on_hover_text("Delete cell").clicked() {
                                 to_delete = Some(idx);
                             }
-                            if cell.cell_type != "markdown" && ui.small_button("▶").clicked() {
+                            if cell.cell_type != "markdown" && ui.small_button("▶").on_hover_text("Play cell").clicked() {
                                 to_run = Some(idx);
                             }
                             // Reorder buttons
-                            if idx + 1 < cell_count_inner && ui.small_button("↓").clicked() {
+                            if idx + 1 < cell_count_inner && ui.small_button("▼").on_hover_text("Move down").clicked() {
                                 to_move_down = Some(idx);
                             }
-                            if idx > 0 && ui.small_button("↑").clicked() {
+                            if idx > 0 && ui.small_button("▲").on_hover_text("Move up").clicked() {
                                 to_move_up = Some(idx);
                             }
                         });

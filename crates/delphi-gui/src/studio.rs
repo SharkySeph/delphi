@@ -55,58 +55,89 @@ impl StudioState {
     pub fn tracks_ui(&mut self, ui: &mut egui::Ui) {
         ui.heading("Tracks");
 
-        let mut to_remove: Option<usize> = None;
-        for (idx, track) in self.tracks.iter_mut().enumerate() {
-            ui.group(|ui| {
-                ui.horizontal(|ui| {
-                    ui.text_edit_singleline(&mut track.name);
-                    if ui.small_button("\u{1F5D1}").clicked() {
-                        to_remove = Some(idx);
-                    }
+        egui::ScrollArea::vertical().show(ui, |ui| {
+            let mut to_remove: Option<usize> = None;
+            for (idx, track) in self.tracks.iter_mut().enumerate() {
+                ui.group(|ui| {
+                    ui.horizontal(|ui| {
+                        ui.text_edit_singleline(&mut track.name);
+                        if ui.small_button("\u{1F5D1}").on_hover_text("Remove track").clicked() {
+                            to_remove = Some(idx);
+                        }
+                    });
+                    ui.horizontal(|ui| {
+                        ui.label("Instrument:");
+                        let prev_instrument = track.instrument.clone();
+                        Self::instrument_combo(ui, format!("track_inst_{}", idx), &mut track.instrument);
+                        if track.instrument != prev_instrument {
+                            track.program = gm_program_from_name(&track.instrument);
+                        }
+                    });
+                    ui.horizontal(|ui| {
+                        ui.label("Ch:");
+                        let mut ch = track.channel as i32;
+                        if ui.add(egui::DragValue::new(&mut ch).range(0..=15)).changed() {
+                            track.channel = ch as u8;
+                        }
+                    });
+                    ui.checkbox(&mut track.muted, "Mute");
+                    ui.checkbox(&mut track.solo, "Solo");
                 });
-                ui.horizontal(|ui| {
-                    ui.label("Instrument:");
-                    let prev_instrument = track.instrument.clone();
-                    egui::ComboBox::from_id_salt(format!("track_inst_{}", idx))
-                        .selected_text(&track.instrument)
-                        .width(140.0)
-                        .show_ui(ui, |ui| {
-                            for &name in GM_INSTRUMENT_NAMES {
-                                ui.selectable_value(
-                                    &mut track.instrument,
-                                    name.to_string(),
-                                    name,
-                                );
-                            }
-                        });
-                    if track.instrument != prev_instrument {
-                        track.program = gm_program_from_name(&track.instrument);
-                    }
-                });
-                ui.horizontal(|ui| {
-                    ui.label("Ch:");
-                    let mut ch = track.channel as i32;
-                    if ui.add(egui::DragValue::new(&mut ch).range(0..=15)).changed() {
-                        track.channel = ch as u8;
-                    }
-                });
-                ui.checkbox(&mut track.muted, "Mute");
-                ui.checkbox(&mut track.solo, "Solo");
+            }
+
+            if let Some(idx) = to_remove {
+                self.tracks.remove(idx);
+            }
+
+            if ui.button("+ Add Track").clicked() {
+                let n = self.tracks.len() + 1;
+                self.tracks.push(TrackState::new(
+                    &format!("Track {}", n),
+                    "piano",
+                    0,
+                    (n - 1).min(15) as u8,
+                ));
+            }
+        });
+    }
+
+    /// Reusable filterable instrument combo box.
+    /// Shows a text field at the top that filters the GM instrument list.
+    pub fn instrument_combo(ui: &mut egui::Ui, id: String, instrument: &mut String) {
+        let popup_id = ui.make_persistent_id(&id);
+        let mut selected_text = instrument.clone();
+        if selected_text.is_empty() {
+            selected_text = "piano".into();
+        }
+        let button = ui.button(egui::RichText::new(format!("🎵 {}", selected_text)));
+        if button.clicked() {
+            ui.memory_mut(|mem| mem.toggle_popup(popup_id));
+        }
+        egui::popup_below_widget(ui, popup_id, &button, egui::PopupCloseBehavior::CloseOnClickOutside, |ui| {
+            ui.set_min_width(180.0);
+            ui.set_max_height(250.0);
+            // Filter field stored via egui data
+            let filter_id = ui.make_persistent_id(format!("{}_filter", id));
+            let mut filter: String = ui.data_mut(|d| d.get_temp(filter_id).unwrap_or_default());
+            ui.horizontal(|ui| {
+                ui.label("🔍");
+                ui.text_edit_singleline(&mut filter);
             });
-        }
-
-        if let Some(idx) = to_remove {
-            self.tracks.remove(idx);
-        }
-
-        if ui.button("+ Add Track").clicked() {
-            let n = self.tracks.len() + 1;
-            self.tracks.push(TrackState::new(
-                &format!("Track {}", n),
-                "piano",
-                0,
-                (n - 1).min(15) as u8,
-            ));
-        }
+            ui.data_mut(|d| d.insert_temp(filter_id, filter.clone()));
+            let lower_filter = filter.to_lowercase();
+            egui::ScrollArea::vertical().show(ui, |ui| {
+                for &name in GM_INSTRUMENT_NAMES {
+                    if !lower_filter.is_empty() && !name.to_lowercase().contains(&lower_filter) {
+                        continue;
+                    }
+                    if ui.selectable_label(*instrument == name, name).clicked() {
+                        *instrument = name.to_string();
+                        ui.memory_mut(|mem| mem.toggle_popup(popup_id));
+                        // Clear filter for next open
+                        ui.data_mut(|d| d.insert_temp::<String>(filter_id, String::new()));
+                    }
+                }
+            });
+        });
     }
 }

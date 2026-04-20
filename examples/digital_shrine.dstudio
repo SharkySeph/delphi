@@ -1,0 +1,81 @@
+{
+  "version": 1,
+  "title": "Digital Shrine (幽霊の祈り)",
+  "settings": {
+    "tempo": 58,
+    "key": "D minor",
+    "time_sig": "4/4"
+  },
+  "cells": [
+    {
+      "type": "markdown",
+      "source": "# Digital Shrine (幽霊の祈り)\n\nA slow, ceremonial piece inspired by the shamanic and traditional\nmusic of *Ghost in the Shell* — Kenji Kawai's fusion of ancient\nchant with digital atmosphere.\n\nD minor pentatonic (D F G A C) forms the melodic backbone.\n24 bars at 58 BPM — approximately 100 seconds.\n\n**Instruments:** contrabass drone, choir chant, voice harmony,\nkoto, shamisen, pan flute (shakuhachi), strings, warm pad,\ntimpani (taiko), ritual percussion"
+    },
+    {
+      "type": "code",
+      "source": "tempo(58)\nkey(\"D minor\")\ntime_sig(4, 4)"
+    },
+    {
+      "type": "markdown",
+      "source": "## I — The Drone Awakens (bars 1–8)\n\nA deep bass drone and open-fifth strings emerge from silence.\nThe choir begins its modal invocation on bar 3."
+    },
+    {
+      "type": "notation",
+      "source": "# @instrument contrabass\n# @track Bass Drone\n# @velocity 70\n\nD2:w D2:w D2:w D2:w\nA1:w A1:w D2:w D2:w\nD2:w D2:w Bb1:w Bb1:w\nC2:w A1:w D2:w D2:w\nD2:w D2:w D2:w Bb1:w\nC2:w A1:w D2:w D2:w",
+      "meta": { "label": "Bass Drone", "program": "contrabass" }
+    },
+    {
+      "type": "notation",
+      "source": "# @instrument strings\n# @track Strings\n# @velocity 40\n\nD3,A3:w D3,A3:w D3,A3:w D3,F3,A3:w\nA2,E3:w A2,E3,A3:w D3,A3:w D3,F3,A3:w\nD3,A3:w D3,F3,A3:w Bb2,F3:w Bb2,D3,F3:w\nC3,G3:w A2,E3:w D3,A3:w D3,F3,A3:w\nD3,A3,D4:w D3,F3,A3:w D3,A3:w Bb2,D3,F3:w\nC3,G3:w A2,E3:w D3,A3:w D3,A3:w",
+      "meta": { "label": "Strings", "program": "strings" }
+    },
+    {
+      "type": "notation",
+      "source": "# @instrument choir\n# @track Chant\n# @velocity 75\n\nr:w r:w D4:w!p D4:h!p F4:h\nA4:w!mp G4:h!mp F4:h D4:w!p r:w\nD4:h!mp F4:h G4:w A4:w!mf C5:h!mf A4:h\nG4:w!mp F4:h!p D4:h D4:w!p r:w\nD5:w!mf C5:h!mf A4:h A4:w!f G4:h!mf F4:h\nD4:w!mp F4:h!p D4:h D4:w!pp D4:w!pp",
+      "meta": { "label": "Chant", "program": "choir" }
+    },
+    {
+      "type": "notation",
+      "source": "# @instrument voice\n# @track Harmony Voice\n# @velocity 60\n\nr:w r:w A3:w!p A3:h!p C4:h\nF4:w!mp D4:h!mp C4:h A3:w!p r:w\nA3:h!mp C4:h D4:w F4:w!mf A4:h!mf F4:h\nD4:w!mp C4:h!p A3:h A3:w!p r:w\nA4:w!mf A4:h!mf F4:h F4:w!f D4:h!mf C4:h\nA3:w!mp C4:h!p A3:h A3:w!pp A3:w!pp",
+      "meta": { "label": "Harmony Voice", "program": "voice" }
+    },
+    {
+      "type": "markdown",
+      "source": "## II — The Ritual (bars 9–16)\n\nKoto and shamisen enter — ancient instruments voicing a\npentatonic invocation over the chant. The timpani punctuates\nlike distant taiko."
+    },
+    {
+      "type": "notation",
+      "source": "# @instrument koto\n# @track Koto\n# @velocity 65\n\nr:w r:w r:w r:w\nD4:8!p r:8 A4:8 r:8 D5:h r:h D5:q A4:q D4:h r:h r:w\nD4:8!mp F4:8 A4:8 D5:8 A4:q D4:q A4:8 C5:8 A4:8 G4:8 F4:q D4:q\nD4:8 G4:8 A4:8 G4:8 D4:h r:w\nr:w r:w D5:h!p A4:h r:w\nD4:8!mf F4:8 G4:8 A4:8 C5:8 A4:8 G4:8 F4:8 D5:8 C5:8 A4:8 G4:8 A4:q r:q\nr:h A4:h D4:h r:h\nD4:q!p r:q A4:h D4:w!pp r:w",
+      "meta": { "label": "Koto", "program": "koto" }
+    },
+    {
+      "type": "notation",
+      "source": "# @instrument shamisen\n# @track Shamisen\n# @velocity 60\n\nr:w r:w r:w r:w\nr:w r:w r:w r:w\nD3:q!mp r:q A3:q r:q D3:8 F3:8 A3:8 r:8 D3:q r:q\nA3:q D3:q r:h r:w\nD3:q!mp r:q r:q r:q r:w r:w r:w\nD3:q!mf F3:q G3:q A3:q D3:8 A3:8 D4:8 A3:8 G3:q F3:q\nA3:h D3:h r:w\nD3:q!p r:q A3:h D3:w!pp r:w",
+      "meta": { "label": "Shamisen", "program": "shamisen" }
+    },
+    {
+      "type": "markdown",
+      "source": "## III — Transcendence (bars 17–24)\n\nThe shakuhachi cries across the void. Ceremonial drums rise.\nA digital pad shimmers beneath the ancient voices before\neverything dissolves into a final sustained drone."
+    },
+    {
+      "type": "notation",
+      "source": "# @instrument pan flute\n# @track Shakuhachi\n# @velocity 55\n\nr:w r:w r:w r:w\nr:w r:w r:w r:w\nr:w r:w r:w r:w\nr:w r:w D5:w!p r:w\nD5:h!mp F5:h G5:w!mf A5:h!f G5:8 F5:8 r:q\nD5:w!mp r:h D5:h D5:w!pp r:w",
+      "meta": { "label": "Shakuhachi", "program": "pan flute" }
+    },
+    {
+      "type": "notation",
+      "source": "# @instrument warm pad\n# @track Digital Veil\n# @velocity 35\n\nr:w r:w r:w r:w\nr:w r:w r:w r:w\nr:w r:w r:w r:w\nr:w r:w D4,A4:w!pp D4,A4:w!pp\nD4,F4,A4:w!p D4,G4,Bb4:w!p D4,F4,A4:w!mp D3,A3:w!p\nD3,A3:w!pp r:w r:w r:w",
+      "meta": { "label": "Digital Veil", "program": "warm pad" }
+    },
+    {
+      "type": "notation",
+      "source": "# @instrument timpani\n# @track Taiko\n# @velocity 80\n\nr:w r:w r:w r:w\nr:w r:w r:w r:w\nD2:w!mp r:w D2:h!mf r:h D2:q r:q r:h\nA1:w!mf r:w D2:w!f r:w\nD2:h!f D2:q D2:q D2:w!ff D2:h!mf r:h r:w\nD2:q!mp r:q r:h r:w D2:w!p r:w",
+      "meta": { "label": "Taiko", "program": "timpani" }
+    },
+    {
+      "type": "notation",
+      "source": "# @instrument drums\n# @track Ritual Percussion\n# @channel 9\n\nr:w r:w r:w r:w\nr:w r:w r:w r:w\nr:w r:w tri:w r:w\ntri:h r:h tamb:w r:w r:w\n{tri(3,8) tamb(2,8)}\n{tri(3,8) tamb(2,8)}\ntri:h r:h r:w\nr:w r:w tri:w r:w",
+      "meta": { "label": "Ritual Percussion", "channel": 9 }
+    }
+  ]
+}

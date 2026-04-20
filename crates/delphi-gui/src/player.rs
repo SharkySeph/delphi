@@ -20,6 +20,8 @@ pub struct TransportState {
     elapsed_secs: f64,
     /// BPM override (when set, overrides project tempo).
     pub bpm_override: Option<f64>,
+    /// Start offset in bars (0 = beginning).
+    pub start_bar: u32,
     /// Soundfont status message shown in transport bar.
     sf_status: String,
     /// Shared flag set by playback thread when it finishes.
@@ -34,6 +36,7 @@ impl TransportState {
             play_start: None,
             elapsed_secs: 0.0,
             bpm_override: None,
+            start_bar: 0,
             sf_status: String::new(),
             done_flag: Arc::new(AtomicBool::new(false)),
         }
@@ -103,7 +106,7 @@ impl TransportState {
 
     fn play_events(
         &mut self,
-        events: Vec<SfEvent>,
+        mut events: Vec<SfEvent>,
         tempo: Tempo,
         stop_flag: &Arc<AtomicBool>,
         sf_path: Option<&PathBuf>,
@@ -114,6 +117,16 @@ impl TransportState {
     ) {
         if self.playing {
             return;
+        }
+
+        // Apply start-bar offset: skip events before the offset and shift remaining
+        if self.start_bar > 0 {
+            let ticks_per_bar = 480 * 4; // Assuming 4/4 for now
+            let offset_ticks = self.start_bar * ticks_per_bar;
+            events.retain(|ev| ev.tick + ev.duration_ticks > offset_ticks);
+            for ev in &mut events {
+                ev.tick = ev.tick.saturating_sub(offset_ticks);
+            }
         }
 
         let sf = match sf_path {
@@ -193,6 +206,19 @@ impl TransportState {
 
             // Loop toggle
             ui.toggle_value(&mut self.looping, "🔁 Loop");
+
+            ui.separator();
+
+            // Start bar offset
+            ui.label("Bar:");
+            let mut bar = self.start_bar as i32;
+            if ui
+                .add(egui::DragValue::new(&mut bar).range(0..=999).speed(0.3))
+                .on_hover_text("Start playback from this bar (0 = beginning)")
+                .changed()
+            {
+                self.start_bar = bar.max(0) as u32;
+            }
 
             ui.separator();
 

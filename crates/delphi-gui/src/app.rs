@@ -67,6 +67,8 @@ pub struct DelphiApp {
     // Engine state
     pub stop_flag: Arc<AtomicBool>,
     pub project_path: Option<PathBuf>,
+    /// Deferred file-open request (set by Ctrl+O, consumed next frame).
+    pending_open: bool,
 }
 
 impl DelphiApp {
@@ -93,18 +95,19 @@ impl DelphiApp {
             show_side: true,
             stop_flag: Arc::new(AtomicBool::new(false)),
             project_path: None,
+            pending_open: false,
         }
     }
 
     fn menu_bar(&mut self, ui: &mut egui::Ui) {
         egui::menu::bar(ui, |ui| {
             ui.menu_button("File", |ui| {
-                if ui.button("New Project").clicked() {
+                if ui.button("New Project (Ctrl+N)").clicked() {
                     self.studio = StudioState::new();
                     self.project_path = None;
                     ui.close_menu();
                 }
-                if ui.button("Open…").clicked() {
+                if ui.button("Open… (Ctrl+O)").clicked() {
                     if let Some(path) = rfd::FileDialog::new()
                         .add_filter("Delphi Studio", &["dstudio"])
                         .add_filter("Delphi", &["delphi"])
@@ -142,7 +145,7 @@ impl DelphiApp {
                         ui.close_menu();
                     }
                 });
-                if ui.button("Save").clicked() {
+                if ui.button("Save (Ctrl+S)").clicked() {
                     self.save_project();
                     ui.close_menu();
                 }
@@ -362,6 +365,15 @@ impl eframe::App for DelphiApp {
                     }
                 }
             }
+            // Ctrl+N: New project
+            if i.modifiers.ctrl && i.key_pressed(egui::Key::N) {
+                self.studio = StudioState::new();
+                self.project_path = None;
+            }
+            // Ctrl+O: Open file
+            if i.modifiers.ctrl && i.key_pressed(egui::Key::O) {
+                self.pending_open = true;
+            }
             // Ctrl+S: Save
             if i.modifiers.ctrl && i.key_pressed(egui::Key::S) {
                 self.save_project();
@@ -404,6 +416,21 @@ impl eframe::App for DelphiApp {
                 self.bottom_panel = BottomPanel::Help;
             }
         });
+
+        // Handle deferred open dialog (must be outside input closure)
+        if self.pending_open {
+            self.pending_open = false;
+            if let Some(path) = rfd::FileDialog::new()
+                .add_filter("Delphi Studio", &["dstudio"])
+                .add_filter("Delphi", &["delphi"])
+                .pick_file()
+            {
+                match self.studio.load(&path) {
+                    Ok(()) => self.project_path = Some(path),
+                    Err(e) => eprintln!("Failed to open project: {}", e),
+                }
+            }
+        }
 
         // Top menu bar
         egui::TopBottomPanel::top("menu_bar").show(ctx, |ui| {
@@ -582,6 +609,8 @@ fn help_panel_ui(ui: &mut egui::Ui) {
                 ui.label(desc);
                 ui.end_row();
             };
+            row(ui, "Ctrl+N", "New project");
+            row(ui, "Ctrl+O", "Open file");
             row(ui, "F5", "Play all cells");
             row(ui, "Escape", "Stop playback");
             row(ui, "F6", "Play current cell");
@@ -592,6 +621,8 @@ fn help_panel_ui(ui: &mut egui::Ui) {
             row(ui, "Ctrl+H", "Toggle this help panel");
             row(ui, "Ctrl+Up/Down", "Navigate cells");
             row(ui, "Ctrl+Shift+Up/Down", "Reorder cells");
+            row(ui, "Delete/Backspace", "Delete selected notes (Piano Roll)");
+            row(ui, "Ctrl+A", "Select all notes (Piano Roll)");
         });
 
         ui.separator();
