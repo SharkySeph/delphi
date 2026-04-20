@@ -308,10 +308,10 @@ impl EditorState {
                                 to_run = Some(idx);
                             }
                             // Reorder buttons
-                            if idx + 1 < cell_count_inner && ui.small_button("▼").on_hover_text("Move down").clicked() {
+                            if idx + 1 < cell_count_inner && ui.small_button("Dn").on_hover_text("Move down").clicked() {
                                 to_move_down = Some(idx);
                             }
-                            if idx > 0 && ui.small_button("▲").on_hover_text("Move up").clicked() {
+                            if idx > 0 && ui.small_button("Up").on_hover_text("Move up").clicked() {
                                 to_move_up = Some(idx);
                             }
                         });
