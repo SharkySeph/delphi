@@ -3,40 +3,40 @@
   "title": "Digital Shrine",
   "settings": {
     "tempo": 58,
-    "key": "D minor",
+    "key": "D Phrygian",
     "time_sig": "4/4"
   },
   "cells": [
     {
       "type": "markdown",
-      "source": "# Digital Shrine (幽霊の祈り)\n\nA slow, ceremonial piece inspired by the shamanic and traditional\nmusic of *Ghost in the Shell* — Kenji Kawai's fusion of ancient\nchant with digital atmosphere.\n\nD minor pentatonic (D F G A C) forms the melodic backbone.\n32 bars at 58 BPM — approximately 132 seconds.\n\n**Instruments:** contrabass drone, choir chant, voice harmony,\nkoto, shamisen, pan flute (shakuhachi), strings, warm pad,\ncelesta, timpani (taiko), ritual percussion"
+      "source": "# Digital Shrine (幽霊の祈り)\n\nA slow, ceremonial piece inspired by the shamanic and traditional\nmusic of *Ghost in the Shell* — Kenji Kawai's fusion of ancient\nchant with digital atmosphere.\n\nD Phrygian (D Eb F G A Bb C) forms the modal backbone.\nThe choir voices move in Bulgarian-style minor 2nds — dissonant,\nclose-interval singing where Eb clashes against D and Ab against A,\ncreating the unsettling, sacred quality of Kawai's choral writing.\n32 bars at 58 BPM — approximately 132 seconds.\n\n**Instruments:** contrabass drone, choir chant, voice harmony,\nkoto, shamisen, pan flute (shakuhachi), strings, warm pad,\ncelesta, timpani (taiko), ritual percussion"
     },
     {
       "type": "code",
-      "source": "tempo(58)\nkey(\"D minor\")\ntime_sig(4, 4)"
+      "source": "tempo(58)\nkey(\"D Phrygian\")\ntime_sig(4, 4)"
     },
     {
       "type": "markdown",
-      "source": "## I — The Drone Awakens (bars 1–8)\n\nA deep bass drone and open-fifth strings emerge from silence.\nThe choir begins its modal invocation on bar 3, the harmony\nvoice answering a third below."
+      "source": "## I — The Drone Awakens (bars 1–8)\n\nA deep bass drone and Phrygian strings emerge from silence.\nThe choir begins its modal invocation on bar 3, the harmony\nvoice answering a minor 2nd away — voices clashing in\nBulgarian close-interval style."
     },
     {
       "type": "notation",
-      "source": "# @instrument contrabass\n# @track Bass Drone\n# @velocity 70\n\nD2:w!pp D2:w!pp D2:w!p D2:w!p\nA1:w!p A1:w!mp D2:w!mp D2:w!mp\nD2:w!mp D2:w!mp Bb1:w!mp Bb1:w!mf\nC2:w!mf A1:w!mp D2:w!mp D2:w!mf\nD2:w!mf D2:w!mf D2:w!f Bb1:w!f\nC2:w!f C2:w!f A1:w!mf D2:w!f\nD2:w!mf Bb1:w!mp C2:w!mp A1:w!p\nD2:w!p~ D2:w D2:w!pp D2:w.ferm!ppp",
+      "source": "# @instrument contrabass\n# @track Bass Drone\n# @velocity 70\n\nD2:w!pp D2:w!pp D2:w!p D2:w!p\nA1:w!p A1:w!mp D2:w!mp Eb2:w!mp\nD2:w!mp D2:w!mp Bb1:w!mp Bb1:w!mf\nC2:w!mf A1:w!mp D2:w!mp D2:w!mf\nD2:w!mf Eb2:w!mf D2:w!f Bb1:w!f\nC2:w!f C2:w!f A1:w!mf D2:w!f\nD2:w!mf Bb1:w!mp Eb2:w!mp A1:w!p\nD2:w!p~ D2:w D2:w!pp D2:w.ferm!ppp",
       "meta": { "label": "Bass Drone", "program": "contrabass" }
     },
     {
       "type": "notation",
-      "source": "# @instrument strings\n# @track Strings\n# @velocity 40\n\nD3,A3:w!pp D3,A3:w!pp D3,A3:w!p D3,F3,A3:w!p\nA2,E3:w!p A2,E3,A3:w!mp D3,A3:w!mp D3,F3,A3:w!mp\nD3,A3:w!mp D3,F3,A3:w!mp Bb2,F3:w!mp Bb2,D3,F3:w!mf\nC3,G3:w!mf A2,E3:w!mp D3,A3:w!mf D3,F3,A3:w!mf\nD3,A3,D4:w!mf D3,F3,A3,D4:w!f D3,A3,D4:w!f Bb2,D3,F3,Bb3:w!f\nC3,G3,C4:w!f A2,E3,A3:w!f D3,F3,A3,D4:w!f D3,A3,D4:w!f\nD3,A3:w!mf D3,F3,A3:w!mp Bb2,F3:w!p C3,G3:w!p\nA2,E3:w!p~ A2,E3:w D3,A3:w!pp D3,A3:w.ferm!ppp",
+      "source": "# @instrument strings\n# @track Strings\n# @velocity 40\n\nD3,A3:w!pp D3,A3:w!pp D3,A3:w!p D3,F3,A3:w!p\nA2,Eb3:w!p A2,Eb3,A3:w!mp D3,A3:w!mp D3,F3,A3:w!mp\nD3,A3:w!mp D3,F3,A3:w!mp Bb2,F3:w!mp Bb2,D3,F3:w!mf\nC3,G3:w!mf A2,Eb3:w!mp D3,Ab3:w!mf D3,F3,A3:w!mf\nD3,A3,D4:w!mf D3,F3,Ab3,D4:w!f D3,A3,D4:w!f Bb2,D3,F3,Bb3:w!f\nC3,Ab3,C4:w!f A2,Eb3,A3:w!f D3,F3,A3,D4:w!f D3,A3,D4:w!f\nD3,A3:w!mf D3,F3,Ab3:w!mp Bb2,F3:w!p C3,G3:w!p\nA2,Eb3:w!p~ A2,Eb3:w D3,A3:w!pp D3,A3:w.ferm!ppp",
       "meta": { "label": "Strings", "program": "strings" }
     },
     {
       "type": "notation",
-      "source": "# @instrument choir\n# @track Chant\n# @velocity 75\n\nr:w r:w D4:w!pp D4:h!p F4:h\nA4:w!mp G4:h!mp F4:h D4:w!p r:w\nD4:h!mp F4:h G4:w!mf A4:w!mf C5:h!mf A4:h\nG4:w!mp F4:h!p D4:h D4:w!p r:w\nD4:h!mf F4:h A4:w!f C5:w!f A4:h!f G4:h\nD5:w!ff C5:h!f A4:h A4:w!f G4:h!mf F4:h\nD4:w!mf F4:h!mp D4:h D4:w!p C4:h!p D4:h\nD4:w!pp~ D4:w D4:w!pp D4:w.ferm!ppp",
+      "source": "# @instrument choir\n# @track Chant\n# @velocity 75\n\nr:w r:w D4:w!pp Eb4:h!p D4:h\nF4:w!mp Eb4:h!mp D4:h D4:w!p r:w\nD4:h!mp Eb4:h G4:w!mf A4:w!mf Bb4:h!mf A4:h\nF4:w!mp Eb4:h!p D4:h D4:w!p r:w\nD4:h!mf F4:h A4:w!f Bb4:w!f A4:h!f G4:h\nD5:w!ff Bb4:h!f A4:h A4:w!f Eb4:h!mf D4:h\nD4:w!mf Eb4:h!mp D4:h D4:w!p Eb4:h!p D4:h\nD4:w!pp~ D4:w D4:w!pp D4:w.ferm!ppp",
       "meta": { "label": "Chant", "program": "choir" }
     },
     {
       "type": "notation",
-      "source": "# @instrument voice\n# @track Harmony Voice\n# @velocity 60\n\nr:w r:w A3:w!pp A3:h!p C4:h\nF4:w!mp D4:h!mp C4:h A3:w!p r:w\nA3:h!mp C4:h D4:w!mf F4:w!mf A4:h!mf F4:h\nD4:w!mp C4:h!p A3:h A3:w!p r:w\nA3:h!mf C4:h F4:w!f A4:w!f F4:h!f D4:h\nA4:w!ff A4:h!f F4:h F4:w!f D4:h!mf C4:h\nA3:w!mp C4:h!mp A3:h A3:w!p G3:h!p A3:h\nA3:w!pp~ A3:w A3:w!pp A3:w.ferm!ppp",
+      "source": "# @instrument voice\n# @track Harmony Voice\n# @velocity 60\n\nr:w r:w Eb4:w!pp D4:h!p C#4:h\nEb4:w!mp D4:h!mp C#4:h C#4:w!p r:w\nC#4:h!mp D4:h Ab4:w!mf Bb4:w!mf A4:h!mf Ab4:h\nEb4:w!mp D4:h!p C#4:h C#4:w!p r:w\nC#4:h!mf Eb4:h Ab4:w!f A4:w!f Ab4:h!f F#4:h\nEb5:w!ff A4:h!f Ab4:h Ab4:w!f D4:h!mf C#4:h\nC#4:w!mp D4:h!mp C#4:h C#4:w!p D4:h!p Eb4:h\nEb4:w!pp~ Eb4:w Eb4:w!pp Eb4:w.ferm!ppp",
       "meta": { "label": "Harmony Voice", "program": "voice" }
     },
     {
@@ -64,7 +64,7 @@
     },
     {
       "type": "notation",
-      "source": "# @instrument warm pad\n# @track Digital Veil\n# @velocity 35\n\nr:w r:w r:w r:w\nr:w r:w r:w r:w\nr:w r:w r:w r:w\nr:w r:w D4,A4:w!pp D4,A4:w!pp\nD4,F4,A4:w!p D4,G4,Bb4:w!p D4,F4,A4:w!mp D3,A3:w!p\nD4,F4,A4,D5:w!mp D4,G4,Bb4:w!mp C4,F4,A4:w!p D3,A3,D4:w!p\nD3,A3:w!pp r:w r:w\nr:w",
+      "source": "# @instrument warm pad\n# @track Digital Veil\n# @velocity 35\n\nr:w r:w r:w r:w\nr:w r:w r:w r:w\nr:w r:w r:w r:w\nr:w r:w D4,A4:w!pp D4,Ab4:w!pp\nD4,Eb4,A4:w!p D4,G4,Bb4:w!p D4,Eb4,Ab4:w!mp D3,A3:w!p\nD4,Eb4,A4,D5:w!mp D4,Ab4,Bb4:w!mp C4,Eb4,A4:w!p D3,A3,D4:w!p\nD3,A3:w!pp r:w r:w\nr:w",
       "meta": { "label": "Digital Veil", "program": "warm pad" }
     },
     {

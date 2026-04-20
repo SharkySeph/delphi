@@ -527,8 +527,11 @@ impl eframe::App for DelphiApp {
             // Compute active token highlights for Strudel-style playback highlighting
             let active_highlights: Vec<Vec<(usize, usize)>> = if self.transport.is_playing() {
                 let elapsed = self.transport.elapsed_secs();
-                let bpm = self.transport.bpm_override.unwrap_or(self.studio.settings.bpm);
-                let tick = (elapsed * bpm / 60.0 * 480.0) as u32;
+                let tempo_map = match self.transport.bpm_override {
+                    Some(bpm) => delphi_core::duration::TempoMap::constant(&delphi_core::duration::Tempo { bpm }),
+                    None => self.studio.tempo_map(),
+                };
+                let tick = tempo_map.seconds_to_tick(elapsed);
                 let all_spans = self.studio.compute_all_token_spans();
                 all_spans
                     .iter()

@@ -6,12 +6,18 @@
 use std::fs::File;
 use std::path::Path;
 use std::sync::Arc;
+use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Instant;
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use rustysynth::{SoundFont, Synthesizer, SynthesizerSettings};
 
 use delphi_core::duration::TempoMap;
+
+/// Shared signal set when audio actually starts streaming.
+/// The GUI can observe this to synchronize visualizations with real audio output.
+pub type AudioStartSignal = Arc<Mutex<Option<Instant>>>;
 
 /// Re-export NoteEvent as SfEvent for backward compatibility.
 pub use delphi_core::event::NoteEvent as SfEvent;
@@ -36,6 +42,21 @@ pub fn play_with_soundfont(
     play_with_soundfont_panned(sf_path, events, tempo, stop, &[0.5; 16])
 }
 
+/// Like [`play_with_soundfont_full`] but also signals when audio actually starts.
+pub fn play_with_soundfont_full_signaled(
+    sf_path: &Path,
+    events: &[SfEvent],
+    tempo: &TempoMap,
+    stop: &Arc<AtomicBool>,
+    channel_pan: &[f32; 16],
+    channel_reverb: &[f32; 16],
+    channel_delay: &[f32; 16],
+    channel_volume: &[f32; 16],
+    audio_start: &AudioStartSignal,
+) -> Result<(), SfPlaybackError> {
+    play_with_soundfont_full_inner(sf_path, events, tempo, stop, channel_pan, channel_reverb, channel_delay, channel_volume, Some(audio_start))
+}
+
 /// Render multi-voice events to the audio output with per-channel pan (0.0=left, 0.5=center, 1.0=right).
 pub fn play_with_soundfont_panned(
     sf_path: &Path,
@@ -57,6 +78,20 @@ pub fn play_with_soundfont_full(
     channel_reverb: &[f32; 16],
     channel_delay: &[f32; 16],
     channel_volume: &[f32; 16],
+) -> Result<(), SfPlaybackError> {
+    play_with_soundfont_full_inner(sf_path, events, tempo, stop, channel_pan, channel_reverb, channel_delay, channel_volume, None)
+}
+
+fn play_with_soundfont_full_inner(
+    sf_path: &Path,
+    events: &[SfEvent],
+    tempo: &TempoMap,
+    stop: &Arc<AtomicBool>,
+    channel_pan: &[f32; 16],
+    channel_reverb: &[f32; 16],
+    channel_delay: &[f32; 16],
+    channel_volume: &[f32; 16],
+    audio_start: Option<&AudioStartSignal>,
 ) -> Result<(), SfPlaybackError> {
     let sample_rate = 44100_u32;
 
@@ -129,7 +164,7 @@ pub fn play_with_soundfont_full(
     }
 
     // Play the rendered buffer through cpal
-    play_buffer(&left_buf, &right_buf, sample_rate, stop)?;
+    play_buffer(&left_buf, &right_buf, sample_rate, stop, audio_start)?;
 
     Ok(())
 }
@@ -357,7 +392,7 @@ fn build_messages(events: &[SfEvent], tempo: &TempoMap, sample_rate: u32, channe
     messages
 }
 
-fn play_buffer(left: &[f32], right: &[f32], sample_rate: u32, stop: &Arc<AtomicBool>) -> Result<(), SfPlaybackError> {
+fn play_buffer(left: &[f32], right: &[f32], sample_rate: u32, stop: &Arc<AtomicBool>, audio_start: Option<&AudioStartSignal>) -> Result<(), SfPlaybackError> {
     let host = cpal::default_host();
     let device = host
         .default_output_device()
@@ -404,6 +439,11 @@ fn play_buffer(left: &[f32], right: &[f32], sample_rate: u32, stop: &Arc<AtomicB
     stream
         .play()
         .map_err(|e| SfPlaybackError::Audio(e.to_string()))?;
+
+    // Signal that audio is now actually streaming
+    if let Some(signal) = audio_start {
+        *signal.lock().unwrap() = Some(Instant::now());
+    }
 
     loop {
         std::thread::sleep(std::time::Duration::from_millis(50));

@@ -1,12 +1,12 @@
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use delphi_core::duration::{Duration, Tempo, TempoMap};
 use delphi_core::dynamics::Velocity;
 use delphi_engine::scheduler::AudioEvent;
-use delphi_engine::soundfont::{play_with_soundfont_full, SfEvent};
+use delphi_engine::soundfont::{play_with_soundfont_full_signaled, AudioStartSignal, SfEvent};
 use delphi_engine::AudioOutput;
 
 use crate::studio::StudioState;
@@ -26,6 +26,9 @@ pub struct TransportState {
     sf_status: String,
     /// Shared flag set by playback thread when it finishes.
     done_flag: Arc<AtomicBool>,
+    /// Signal set by the audio thread when streaming actually begins.
+    /// `elapsed_secs()` counts from this instant instead of thread-spawn time.
+    audio_start: AudioStartSignal,
 }
 
 impl TransportState {
@@ -39,6 +42,7 @@ impl TransportState {
             start_bar: 0,
             sf_status: String::new(),
             done_flag: Arc::new(AtomicBool::new(false)),
+            audio_start: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -46,9 +50,14 @@ impl TransportState {
     pub fn poll_done(&mut self) {
         if self.playing && self.done_flag.load(Ordering::Relaxed) {
             self.playing = false;
-            if let Some(start) = self.play_start.take() {
+            // Snapshot final elapsed from the audio-start instant if available.
+            if let Some(start) = *self.audio_start.lock().unwrap() {
+                self.elapsed_secs = start.elapsed().as_secs_f64();
+            } else if let Some(start) = self.play_start.take() {
                 self.elapsed_secs = start.elapsed().as_secs_f64();
             }
+            self.play_start = None;
+            *self.audio_start.lock().unwrap() = None;
         }
     }
 
@@ -57,8 +66,16 @@ impl TransportState {
     }
 
     pub fn elapsed_secs(&self) -> f64 {
-        if let Some(start) = self.play_start {
+        // Prefer the real audio-start instant (set when cpal stream begins).
+        // Fall back to play_start (thread-spawn time) while the engine is
+        // still loading / pre-rendering.
+        if let Some(start) = *self.audio_start.lock().unwrap() {
             start.elapsed().as_secs_f64()
+        } else if let Some(start) = self.play_start {
+            // Audio hasn't started yet — return 0 so visualizations don't
+            // race ahead during the pre-render phase.
+            let _ = start;
+            0.0
         } else {
             self.elapsed_secs
         }
@@ -143,20 +160,24 @@ impl TransportState {
 
         stop_flag.store(false, Ordering::SeqCst);
         self.done_flag.store(false, Ordering::SeqCst);
+        *self.audio_start.lock().unwrap() = None;
         self.playing = true;
         self.play_start = Some(Instant::now());
 
         let stop = stop_flag.clone();
         let done = self.done_flag.clone();
+        let audio_start = self.audio_start.clone();
         let looping = self.looping;
 
         std::thread::spawn(move || {
             if sf.is_file() {
                 loop {
-                    let _ = play_with_soundfont_full(&sf, &events, &tempo_map, &stop, &channel_pan, &channel_reverb, &channel_delay, &channel_volume);
+                    let _ = play_with_soundfont_full_signaled(&sf, &events, &tempo_map, &stop, &channel_pan, &channel_reverb, &channel_delay, &channel_volume, &audio_start);
                     if !looping || stop.load(Ordering::Relaxed) {
                         break;
                     }
+                    // Reset audio_start for the next loop iteration
+                    *audio_start.lock().unwrap() = None;
                     stop.store(false, Ordering::SeqCst);
                 }
             } else {
@@ -181,6 +202,7 @@ impl TransportState {
         stop_flag.store(true, Ordering::SeqCst);
         self.playing = false;
         self.play_start = None;
+        *self.audio_start.lock().unwrap() = None;
     }
 
     /// Render the transport bar UI.
