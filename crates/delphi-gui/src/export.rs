@@ -23,7 +23,8 @@ pub struct ExportDialog {
     pub status: String,
     /// SoundFont path for WAV rendering.
     pub sf_path: Option<PathBuf>,
-    /// Mixer master gain (synced from app when dialog opens).
+    /// Master gain — read from studio.settings.master_gain at export time so it
+    /// always reflects the persisted project value.
     pub master_gain: f32,
 }
 
@@ -35,12 +36,15 @@ impl ExportDialog {
             path: String::new(),
             status: String::new(),
             sf_path: None,
-            master_gain: 1.0,
+            master_gain: 0.8,
         }
     }
 
     /// Render the modal export dialog.
     pub fn modal_ui(&mut self, ctx: &egui::Context, studio: &StudioState) {
+        // Keep master_gain in sync with the project's persisted value every frame.
+        self.master_gain = studio.settings.master_gain;
+
         if !self.open {
             return;
         }
@@ -77,6 +81,16 @@ impl ExportDialog {
                         }
                     }
                 });
+
+                // Show the gain that will be applied so users aren't surprised
+                ui.label(
+                    egui::RichText::new(format!(
+                        "Master gain: {:.0}%  (adjust in Mixer panel)",
+                        self.master_gain * 100.0
+                    ))
+                    .small()
+                    .color(egui::Color32::from_rgb(150, 150, 160)),
+                );
 
                 if !self.status.is_empty() {
                     ui.label(

@@ -1,22 +1,26 @@
 use crate::studio::StudioState;
 
 /// The mixer panel: per-track gain, pan, mute, solo.
-pub struct MixerPanel {
-    /// Master gain (0.0–1.0).
-    pub master_gain: f32,
-}
+/// Master gain is stored in `studio.settings.master_gain` so it persists with
+/// the project and is honoured consistently by playback and export.
+pub struct MixerPanel;
 
 impl MixerPanel {
     pub fn new() -> Self {
-        Self { master_gain: 0.8 }
+        Self
     }
 
     pub fn ui(&mut self, ui: &mut egui::Ui, studio: &mut StudioState) {
         ui.horizontal(|ui| {
             ui.heading("Mixer");
             ui.separator();
-            ui.label("Master:");
-            ui.add(egui::Slider::new(&mut self.master_gain, 0.0..=1.0).text("vol"));
+            ui.label("Master:")
+                .on_hover_text("Master output gain — saved with the project and applied to playback and export");
+            ui.add(
+                egui::Slider::new(&mut studio.settings.master_gain, 0.0..=1.5)
+                    .text("vol")
+                    .fixed_decimals(2),
+            );
         });
         ui.separator();
 
@@ -46,7 +50,8 @@ impl MixerPanel {
                             egui::Slider::new(&mut track.gain, 0.0..=1.5)
                                 .vertical()
                                 .text(""),
-                        );
+                        )
+                        .on_hover_text("Per-track gain");
 
                         // Pan knob
                         ui.horizontal(|ui| {
@@ -55,7 +60,8 @@ impl MixerPanel {
                                 egui::Slider::new(&mut track.pan, 0.0..=1.0)
                                     .show_value(false)
                                     .text(""),
-                            );
+                            )
+                            .on_hover_text(format!("Pan: {:.2}", track.pan));
                             ui.label("R");
                         });
 
@@ -68,6 +74,7 @@ impl MixerPanel {
                             };
                             if ui
                                 .button(egui::RichText::new("M").color(mute_color))
+                                .on_hover_text("Mute this track")
                                 .clicked()
                             {
                                 track.muted = !track.muted;
@@ -80,36 +87,11 @@ impl MixerPanel {
                             };
                             if ui
                                 .button(egui::RichText::new("S").color(solo_color))
+                                .on_hover_text("Solo this track (mutes all others)")
                                 .clicked()
                             {
                                 track.solo = !track.solo;
                             }
-                        });
-
-                        // Reverb / Delay knobs
-                        ui.horizontal(|ui| {
-                            ui.label(
-                                egui::RichText::new("Rv")
-                                    .small()
-                                    .color(egui::Color32::from_rgb(150, 150, 150)),
-                            );
-                            ui.add(
-                                egui::Slider::new(&mut track.reverb, 0.0..=1.0)
-                                    .show_value(false)
-                                    .text(""),
-                            );
-                        });
-                        ui.horizontal(|ui| {
-                            ui.label(
-                                egui::RichText::new("Dl")
-                                    .small()
-                                    .color(egui::Color32::from_rgb(150, 150, 150)),
-                            );
-                            ui.add(
-                                egui::Slider::new(&mut track.delay, 0.0..=1.0)
-                                    .show_value(false)
-                                    .text(""),
-                            );
                         });
 
                         // Instrument label
@@ -122,7 +104,18 @@ impl MixerPanel {
 
                     ui.separator();
                 }
+
+                // Empty state
+                if studio.tracks.is_empty() {
+                    ui.centered_and_justified(|ui| {
+                        ui.label(
+                            egui::RichText::new("No tracks — add cells in the Editor to populate the mixer")
+                                .color(egui::Color32::from_rgb(120, 120, 130)),
+                        );
+                    });
+                }
             });
         });
     }
 }
+

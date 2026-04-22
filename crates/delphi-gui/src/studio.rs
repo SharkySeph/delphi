@@ -1,5 +1,6 @@
 use std::ops::{Deref, DerefMut};
 
+use delphi_engine::{SoundFontCompatibilityReport, TrackCompatibilityIssueKind};
 use delphi_core::notation::compute_token_spans;
 // Re-export types and functions for backward compatibility with existing GUI modules.
 pub use delphi_core::{
@@ -52,7 +53,7 @@ impl StudioState {
     }
 
     /// Render the track list in the side panel.
-    pub fn tracks_ui(&mut self, ui: &mut egui::Ui) {
+    pub fn tracks_ui(&mut self, ui: &mut egui::Ui, compatibility: Option<&SoundFontCompatibilityReport>) {
         ui.heading("Tracks");
 
         egui::ScrollArea::vertical().show(ui, |ui| {
@@ -61,6 +62,52 @@ impl StudioState {
                 ui.group(|ui| {
                     ui.horizontal(|ui| {
                         ui.text_edit_singleline(&mut track.name);
+                        if let Some(issue) = track_compatibility_issue(track, compatibility) {
+                            let reason = match issue.reason {
+                                TrackCompatibilityIssueKind::UnsupportedFormat => "unsupported SoundFont format",
+                                TrackCompatibilityIssueKind::MissingPreset => "missing preset in selected SoundFont",
+                            };
+                            let mut tooltip = format!(
+                                "Track '{}' may be broken:\nexpected bank {} program {} ({})",
+                                issue.track_name,
+                                issue.bank,
+                                issue.program,
+                                reason,
+                            );
+                            if let Some(program) = issue.suggested_program {
+                                let name = issue.suggested_name.as_deref().unwrap_or("unknown");
+                                tooltip.push_str(&format!(
+                                    "\nSuggested fallback: bank {} program {} ({})",
+                                    issue.bank,
+                                    program,
+                                    name,
+                                ));
+                            }
+                            ui.label(
+                                egui::RichText::new("⚠ SF")
+                                    .small()
+                                    .color(egui::Color32::from_rgb(229, 192, 123)),
+                            )
+                            .on_hover_text(tooltip);
+
+                            if let Some(program) = issue.suggested_program {
+                                let label = issue
+                                    .suggested_name
+                                    .as_deref()
+                                    .map(|name| format!("Apply {}", name))
+                                    .unwrap_or_else(|| "Apply fallback".to_string());
+                                if ui
+                                    .small_button(label)
+                                    .on_hover_text(format!(
+                                        "Set track voice to bank {} program {}",
+                                        issue.bank, program
+                                    ))
+                                    .clicked()
+                                {
+                                    track.program = program;
+                                }
+                            }
+                        }
                         if ui.small_button("\u{1F5D1}").on_hover_text("Remove track").clicked() {
                             to_remove = Some(idx);
                         }
@@ -78,6 +125,15 @@ impl StudioState {
                         let mut ch = track.channel as i32;
                         if ui.add(egui::DragValue::new(&mut ch).range(0..=15)).changed() {
                             track.channel = ch as u8;
+                        }
+                        ui.label("Prg:");
+                        let mut program = track.program as i32;
+                        if ui
+                            .add(egui::DragValue::new(&mut program).range(0..=127))
+                            .on_hover_text("MIDI program number used for this track voice")
+                            .changed()
+                        {
+                            track.program = program as u8;
                         }
                     });
                     ui.checkbox(&mut track.muted, "Mute");
@@ -140,4 +196,16 @@ impl StudioState {
             });
         });
     }
+}
+
+fn track_compatibility_issue<'a>(
+    track: &TrackState,
+    compatibility: Option<&'a SoundFontCompatibilityReport>,
+) -> Option<&'a delphi_engine::TrackCompatibilityIssue> {
+    let report = compatibility?;
+    report.issues.iter().find(|issue| {
+        issue.track_name == track.name
+            && issue.channel == track.channel
+            && issue.program == track.program
+    })
 }

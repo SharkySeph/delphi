@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
@@ -212,6 +212,7 @@ impl TransportState {
         studio: &StudioState,
         stop_flag: &Arc<AtomicBool>,
         sf_path: Option<&PathBuf>,
+        missing_project_sf: Option<&Path>,
         master_gain: f32,
     ) {
         ui.horizontal(|ui| {
@@ -286,21 +287,61 @@ impl TransportState {
                 } else {
                     egui::Color32::from_rgb(152, 195, 121)
                 };
-                ui.label(egui::RichText::new(&self.sf_status).small().color(color));
-            } else if let Some(p) = sf_path {
-                let name = p.file_name().unwrap_or_default().to_string_lossy();
+                ui.label(egui::RichText::new(&self.sf_status).small().color(color))
+                    .on_hover_text("SoundFont used for playback and WAV export. Configure in the SoundFonts panel.");
+            } else if let Some(path) = missing_project_sf {
                 ui.label(
-                    egui::RichText::new(format!("SF: {}", name))
-                        .small()
-                        .color(egui::Color32::from_rgb(152, 195, 121)),
-                );
-            } else {
-                ui.label(
-                    egui::RichText::new("No SoundFont")
+                    egui::RichText::new("⚠ Project SoundFont missing")
                         .small()
                         .color(egui::Color32::from_rgb(224, 108, 117)),
+                )
+                .on_hover_text(format!(
+                    "Project SoundFont not found: {}\nPlayback uses the oscillator fallback. Open the SoundFonts panel to install, browse, or clear the missing reference.",
+                    path.display()
+                ));
+            } else if let Some(p) = sf_path {
+                if p.is_file() {
+                    let name = p.file_name().unwrap_or_default().to_string_lossy();
+                    ui.label(
+                        egui::RichText::new(format!("SF: {}", name))
+                            .small()
+                            .color(egui::Color32::from_rgb(152, 195, 121)),
+                    )
+                    .on_hover_text(format!(
+                        "SoundFont: {}\nUsed for playback and WAV export. Configure in the SoundFonts panel.",
+                        p.display()
+                    ));
+                } else {
+                    ui.label(
+                        egui::RichText::new("⚠ No SoundFont")
+                            .small()
+                            .color(egui::Color32::from_rgb(224, 108, 117)),
+                    )
+                    .on_hover_text(
+                        "No SoundFont loaded. Playback will use the oscillator fallback.\n\
+                         Open the SoundFonts panel to add one.",
+                    );
+                }
+            } else {
+                ui.label(
+                    egui::RichText::new("⚠ No SoundFont")
+                        .small()
+                        .color(egui::Color32::from_rgb(224, 108, 117)),
+                )
+                .on_hover_text(
+                    "No SoundFont loaded. Playback will use the oscillator fallback.\n\
+                     Open the SoundFonts panel to add one.",
                 );
             }
+
+            // Master gain display in transport bar
+            ui.separator();
+            ui.label(
+                egui::RichText::new(format!("Vol: {:.0}%", master_gain * 100.0))
+                    .small()
+                    .color(egui::Color32::from_rgb(150, 150, 160)),
+            )
+            .on_hover_text("Master output gain (adjust in the Mixer panel)");
         });
     }
 }

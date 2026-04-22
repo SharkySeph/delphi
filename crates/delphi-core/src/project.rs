@@ -125,9 +125,17 @@ pub struct ProjectSettings {
     pub swing: f32,
     pub humanize: f32,
     pub soundfont_path: Option<String>,
+    /// Master output gain (0.0–1.5). Persisted so reopening, playback, and
+    /// export all use the same level. Default 0.8.
+    #[serde(default = "default_master_gain")]
+    pub master_gain: f32,
     /// Global timeline events (tempo, time_sig, key changes by bar number).
     #[serde(default)]
     pub timeline: Vec<TimelineEntry>,
+}
+
+fn default_master_gain() -> f32 {
+    0.8
 }
 
 impl Default for ProjectSettings {
@@ -141,6 +149,7 @@ impl Default for ProjectSettings {
             swing: 0.0,
             humanize: 0.0,
             soundfont_path: None,
+            master_gain: default_master_gain(),
             timeline: Vec::new(),
         }
     }
@@ -581,7 +590,7 @@ impl Project {
             if source.trim().is_empty() {
                 continue;
             }
-            let program = gm_program_from_name(&cell.instrument);
+            let mut program = gm_program_from_name(&cell.instrument);
             let velocity = cell.velocity;
             let channel = if cell.channel == 9 { 9 } else { cell.channel };
 
@@ -596,6 +605,8 @@ impl Project {
             if let Some(trk) = track {
                 if trk.muted { continue; }
                 if any_solo && !trk.solo { continue; }
+                // Track voice selection is authoritative in Studio.
+                program = trk.program;
             }
 
             let key_str = &self.settings.key_name;
@@ -704,3 +715,176 @@ impl Project {
         all_meta
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── ProjectSettings defaults ──────────────────────────────────────────────
+
+    #[test]
+    fn default_master_gain_is_0_8() {
+        let settings = ProjectSettings::default();
+        assert!(
+            (settings.master_gain - 0.8).abs() < f32::EPSILON,
+            "default master_gain should be 0.8, got {}",
+            settings.master_gain
+        );
+    }
+
+    #[test]
+    fn master_gain_round_trips_through_json() {
+        let mut settings = ProjectSettings::default();
+        settings.master_gain = 0.65;
+        let json = serde_json::to_string(&settings).expect("serialize");
+        let loaded: ProjectSettings = serde_json::from_str(&json).expect("deserialize");
+        assert!(
+            (loaded.master_gain - 0.65).abs() < 0.001,
+            "master_gain should survive JSON round-trip"
+        );
+    }
+
+    #[test]
+    fn old_json_without_master_gain_defaults_to_0_8() {
+        // Simulate a .dstudio file saved before master_gain was added.
+        let json = r#"{
+            "title": "Legacy",
+            "bpm": 120.0,
+            "key_name": "C major",
+            "time_sig_num": 4,
+            "time_sig_den": 4,
+            "swing": 0.0,
+            "humanize": 0.0,
+            "soundfont_path": null,
+            "timeline": []
+        }"#;
+        let settings: ProjectSettings = serde_json::from_str(json).expect("deserialize");
+        assert!(
+            (settings.master_gain - 0.8).abs() < f32::EPSILON,
+            "missing master_gain field should default to 0.8"
+        );
+    }
+
+    // ── Mixer state — mute/solo affect collect_events_mixed ───────────────────
+
+    fn project_with_two_tracks() -> Project {
+        let mut p = Project::new();
+        p.settings.bpm = 120.0;
+        p.settings.time_sig_num = 4;
+        p.settings.time_sig_den = 4;
+
+        // Two notation cells on separate channels
+        p.cells.clear();
+        let mut c0 = Cell::new_notation();
+        c0.source = "C4:q".into();
+        c0.instrument = "piano".into();
+        c0.label = "Piano".into();
+        c0.channel = 0;
+        c0.velocity = 80;
+
+        let mut c1 = Cell::new_notation();
+        c1.source = "G3:q".into();
+        c1.instrument = "bass".into();
+        c1.label = "Bass".into();
+        c1.channel = 1;
+        c1.velocity = 80;
+
+        p.cells.push(c0);
+        p.cells.push(c1);
+
+        p.tracks.clear();
+        p.tracks.push(TrackState::new("Piano", "piano", 0, 0));
+        p.tracks.push(TrackState::new("Bass", "bass", 32, 1));
+        p
+    }
+
+    #[test]
+    fn muted_track_produces_no_events() {
+        let mut p = project_with_two_tracks();
+        p.tracks[0].muted = true;
+
+        let events = p.collect_events_mixed(None, 1.0);
+        // All events should be from channel 1 (bass) only
+        assert!(
+            events.iter().all(|e| e.channel == 1),
+            "muted piano track should produce no events"
+        );
+    }
+
+    #[test]
+    fn solo_track_silences_others() {
+        let mut p = project_with_two_tracks();
+        p.tracks[0].solo = true; // solo Piano
+
+        let events = p.collect_events_mixed(None, 1.0);
+        assert!(
+            events.iter().all(|e| e.channel == 0),
+            "soloed piano track should be the only source of events"
+        );
+        assert!(
+            !events.is_empty(),
+            "soloed track should still produce events"
+        );
+    }
+
+    #[test]
+    fn master_gain_scales_velocity() {
+        let p = project_with_two_tracks();
+        let events_full = p.collect_events_mixed(None, 1.0);
+        let events_half = p.collect_events_mixed(None, 0.5);
+
+        assert!(!events_full.is_empty());
+        for (full, half) in events_full.iter().zip(events_half.iter()) {
+            let expected = ((full.velocity as f32 * 0.5).round() as u8).min(127);
+            assert_eq!(
+                half.velocity, expected,
+                "master_gain=0.5 should halve velocity"
+            );
+        }
+    }
+
+    #[test]
+    fn track_program_overrides_cell_instrument_program() {
+        let mut p = Project::new();
+        p.cells.clear();
+        p.tracks.clear();
+
+        let mut cell = Cell::new_notation();
+        cell.label = "Lead".into();
+        cell.instrument = "piano".into();
+        cell.channel = 0;
+        cell.source = "C4:q".into();
+        p.cells.push(cell);
+
+        let mut track = TrackState::new("Lead", "piano", 0, 0);
+        track.program = 40; // violin
+        p.tracks.push(track);
+
+        let events = p.collect_events_mixed(None, 1.0);
+        assert!(!events.is_empty());
+        assert!(events.iter().all(|ev| ev.program == 40));
+    }
+
+    // ── Channel maps ──────────────────────────────────────────────────────────
+
+    #[test]
+    fn channel_pan_map_reflects_track_state() {
+        let mut p = project_with_two_tracks();
+        p.tracks[0].pan = 0.25;
+        p.tracks[1].pan = 0.75;
+
+        let pan = p.channel_pan_map();
+        assert!((pan[0] - 0.25).abs() < f32::EPSILON);
+        assert!((pan[1] - 0.75).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn channel_volume_map_reflects_track_gain() {
+        let mut p = project_with_two_tracks();
+        p.tracks[0].gain = 1.2;
+
+        let vol = p.channel_volume_map();
+        assert!((vol[0] - 1.2).abs() < f32::EPSILON);
+    }
+}
+

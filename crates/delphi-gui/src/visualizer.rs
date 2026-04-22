@@ -73,6 +73,9 @@ impl Visualizer {
         } else {
             self.current_tick = 0;
             self.last_elapsed = 0.0;
+            // Clear synthetic buffers so they don't show stale data when idle.
+            for s in &mut self.waveform { *s = 0.0; }
+            for b in &mut self.spectrum { *b = 0.0; }
         }
     }
 
@@ -153,8 +156,9 @@ impl Visualizer {
             VisualizerMode::Waveform => self.draw_waveform(ui),
             VisualizerMode::Spectrum => self.draw_spectrum(ui),
             VisualizerMode::Both => {
-                let available = ui.available_height();
-                ui.allocate_ui(Vec2::new(ui.available_width(), available * 0.5), |ui| {
+                let available_h = ui.available_height();
+                let available_w = ui.available_width();
+                ui.allocate_ui(Vec2::new(available_w, (available_h * 0.5).max(60.0)), |ui| {
                     self.draw_waveform(ui);
                 });
                 ui.separator();
@@ -203,6 +207,17 @@ impl Visualizer {
                 );
             }
         }
+
+        // Idle overlay when not playing
+        if !self.is_playing {
+            painter.text(
+                rect.center(),
+                egui::Align2::CENTER_CENTER,
+                "Press F5 to play",
+                egui::FontId::proportional(12.0),
+                Color32::from_rgba_premultiplied(120, 120, 130, 160),
+            );
+        }
     }
 
     fn draw_spectrum(&self, ui: &mut egui::Ui) {
@@ -213,7 +228,28 @@ impl Visualizer {
         // Background
         painter.rect_filled(rect, 0.0, Color32::from_rgb(25, 25, 30));
 
-        if self.spectrum.is_empty() {
+        if !self.is_playing {
+            painter.text(
+                rect.center(),
+                egui::Align2::CENTER_CENTER,
+                "Press F5 to play",
+                egui::FontId::proportional(12.0),
+                Color32::from_rgba_premultiplied(120, 120, 130, 160),
+            );
+            return;
+        }
+
+        // Check whether any note is currently active so we can show an
+        // informative label when nothing is sounding mid-playback.
+        let any_active = self.spectrum.iter().any(|&v| v > 0.001);
+        if !any_active {
+            painter.text(
+                rect.center(),
+                egui::Align2::CENTER_CENTER,
+                "No active notes",
+                egui::FontId::proportional(12.0),
+                Color32::from_rgba_premultiplied(120, 120, 130, 160),
+            );
             return;
         }
 

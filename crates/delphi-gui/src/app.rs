@@ -76,7 +76,7 @@ impl DelphiApp {
         let theme = DelphiTheme::default();
         theme.apply(&cc.egui_ctx);
 
-        Self {
+        let mut app = Self {
             theme,
             studio: StudioState::new(),
             editor: EditorState::new(),
@@ -96,7 +96,26 @@ impl DelphiApp {
             stop_flag: Arc::new(AtomicBool::new(false)),
             project_path: None,
             pending_open: false,
-        }
+        };
+        app.sync_soundfont_from_project();
+        app
+    }
+
+    fn sync_soundfont_from_project(&mut self) {
+        let path = self
+            .studio
+            .settings
+            .soundfont_path
+            .as_ref()
+            .map(PathBuf::from);
+        self.soundfont_mgr.set_active_path(path);
+    }
+
+    fn sync_project_soundfont_from_manager(&mut self) {
+        self.studio.settings.soundfont_path = self
+            .soundfont_mgr
+            .persisted_path()
+            .map(|path| path.to_string_lossy().into_owned());
     }
 
     fn menu_bar(&mut self, ui: &mut egui::Ui) {
@@ -104,6 +123,7 @@ impl DelphiApp {
             ui.menu_button("File", |ui| {
                 if ui.button("New Project (Ctrl+N)").clicked() {
                     self.studio = StudioState::new();
+                    self.sync_soundfont_from_project();
                     self.project_path = None;
                     ui.close_menu();
                 }
@@ -114,7 +134,10 @@ impl DelphiApp {
                         .pick_file()
                     {
                         match self.studio.load(&path) {
-                            Ok(()) => self.project_path = Some(path),
+                            Ok(()) => {
+                                self.project_path = Some(path);
+                                self.sync_soundfont_from_project();
+                            }
                             Err(e) => {
                                 // Show error inline — the status will be visible
                                 eprintln!("Failed to open project: {}", e);
@@ -166,7 +189,7 @@ impl DelphiApp {
                 ui.separator();
                 if ui.button("Export…").clicked() {
                     self.export_dialog.sf_path = self.soundfont_mgr.active_path.clone();
-                    self.export_dialog.master_gain = self.mixer.master_gain;
+                    self.export_dialog.master_gain = self.studio.settings.master_gain;
                     self.export_dialog.open = true;
                     ui.close_menu();
                 }
@@ -188,12 +211,12 @@ impl DelphiApp {
 
             ui.menu_button("Transport", |ui| {
                 if ui.button("▶ Play All (F5)").clicked() {
-                    self.transport.play(&self.studio, &self.stop_flag, self.soundfont_mgr.active_path.as_ref(), self.mixer.master_gain);
+                    self.transport.play(&self.studio, &self.stop_flag, self.soundfont_mgr.active_path.as_ref(), self.studio.settings.master_gain);
                     ui.close_menu();
                 }
                 if ui.button("▶ Play Cell (F6)").clicked() {
                     let idx = self.editor.active_cell;
-                    self.transport.play_cell(&self.studio, idx, &self.stop_flag, self.soundfont_mgr.active_path.as_ref(), self.mixer.master_gain);
+                    self.transport.play_cell(&self.studio, idx, &self.stop_flag, self.soundfont_mgr.active_path.as_ref(), self.studio.settings.master_gain);
                     ui.close_menu();
                 }
                 if ui.button("⏹ Stop (Esc)").clicked() {
@@ -236,6 +259,7 @@ impl DelphiApp {
     }
 
     fn save_project(&mut self) {
+        self.sync_project_soundfont_from_manager();
         if let Some(ref path) = self.project_path {
             self.studio.save(path);
         } else if let Some(path) = rfd::FileDialog::new()
@@ -270,6 +294,7 @@ impl DelphiApp {
             let path = tmp.clone();
             self.studio = StudioState::new();
             if self.studio.load(&path).is_ok() {
+                self.sync_soundfont_from_project();
                 self.project_path = None;
             }
             let _ = std::fs::remove_file(&tmp);
@@ -350,7 +375,7 @@ impl eframe::App for DelphiApp {
         ctx.input(|i| {
             // F5: Play
             if i.key_pressed(egui::Key::F5) {
-                self.transport.play(&self.studio, &self.stop_flag, self.soundfont_mgr.active_path.as_ref(), self.mixer.master_gain);
+                self.transport.play(&self.studio, &self.stop_flag, self.soundfont_mgr.active_path.as_ref(), self.studio.settings.master_gain);
             }
             // Escape: Stop
             if i.key_pressed(egui::Key::Escape) {
@@ -359,7 +384,7 @@ impl eframe::App for DelphiApp {
             // F6: Run current cell
             if i.key_pressed(egui::Key::F6) {
                 let idx = self.editor.active_cell;
-                self.transport.play_cell(&self.studio, idx, &self.stop_flag, self.soundfont_mgr.active_path.as_ref(), self.mixer.master_gain);
+                self.transport.play_cell(&self.studio, idx, &self.stop_flag, self.soundfont_mgr.active_path.as_ref(), self.studio.settings.master_gain);
             }
             // F7: Add cell
             if i.key_pressed(egui::Key::F7) {
@@ -379,6 +404,7 @@ impl eframe::App for DelphiApp {
             // Ctrl+N: New project
             if i.modifiers.ctrl && i.key_pressed(egui::Key::N) {
                 self.studio = StudioState::new();
+                self.sync_soundfont_from_project();
                 self.project_path = None;
             }
             // Ctrl+O: Open file
@@ -392,7 +418,7 @@ impl eframe::App for DelphiApp {
             // Ctrl+E: Export
             if i.modifiers.ctrl && i.key_pressed(egui::Key::E) {
                 self.export_dialog.sf_path = self.soundfont_mgr.active_path.clone();
-                self.export_dialog.master_gain = self.mixer.master_gain;
+                self.export_dialog.master_gain = self.studio.settings.master_gain;
                 self.export_dialog.open = true;
             }
             // Ctrl+Up: Navigate to previous cell
@@ -437,11 +463,17 @@ impl eframe::App for DelphiApp {
                 .pick_file()
             {
                 match self.studio.load(&path) {
-                    Ok(()) => self.project_path = Some(path),
+                    Ok(()) => {
+                        self.project_path = Some(path);
+                        self.sync_soundfont_from_project();
+                    }
                     Err(e) => eprintln!("Failed to open project: {}", e),
                 }
             }
         }
+
+        self.sync_project_soundfont_from_manager();
+        self.soundfont_mgr.refresh_compatibility(&self.studio);
 
         // Top menu bar
         egui::TopBottomPanel::top("menu_bar").show(ctx, |ui| {
@@ -450,7 +482,14 @@ impl eframe::App for DelphiApp {
 
         // Transport bar (below menu)
         egui::TopBottomPanel::top("transport_bar").show(ctx, |ui| {
-            self.transport.ui(ui, &self.studio, &self.stop_flag, self.soundfont_mgr.active_path.as_ref(), self.mixer.master_gain);
+            self.transport.ui(
+                ui,
+                &self.studio,
+                &self.stop_flag,
+                self.soundfont_mgr.active_path.as_ref(),
+                self.soundfont_mgr.missing_project_path(),
+                self.studio.settings.master_gain,
+            );
         });
 
         // Sync transport BPM override into project settings so exports use it
@@ -503,8 +542,8 @@ impl eframe::App for DelphiApp {
                     });
                     ui.separator();
                     match self.side_panel {
-                        SidePanel::Tracks => self.studio.tracks_ui(ui),
-                        SidePanel::SoundFonts => self.soundfont_mgr.ui(ui),
+                        SidePanel::Tracks => self.studio.tracks_ui(ui, self.soundfont_mgr.compatibility_report()),
+                        SidePanel::SoundFonts => self.soundfont_mgr.ui(ui, &self.studio),
                         SidePanel::Export => self.export_dialog.panel_ui(ui, &self.studio),
                         SidePanel::Script => self.script_engine.ui(ui, &mut self.studio),
                     }
@@ -558,13 +597,13 @@ impl eframe::App for DelphiApp {
 
         // Handle cell run request from editor's ▶ button
         if let Some(idx) = self.editor.cell_to_run.take() {
-            self.transport.play_cell(&self.studio, idx, &self.stop_flag, self.soundfont_mgr.active_path.as_ref(), self.mixer.master_gain);
+            self.transport.play_cell(&self.studio, idx, &self.stop_flag, self.soundfont_mgr.active_path.as_ref(), self.studio.settings.master_gain);
             self.editor.last_run_cell = Some(idx);
         }
 
         // Update visualizer with playback state
         {
-            let events = self.studio.collect_events_mixed(None, self.mixer.master_gain);
+            let events = self.studio.collect_events_mixed(None, self.studio.settings.master_gain);
             let tempo_map = match self.transport.bpm_override {
                 Some(bpm) => delphi_core::duration::TempoMap::constant(&delphi_core::duration::Tempo { bpm }),
                 None => self.studio.tempo_map(),

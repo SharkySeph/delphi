@@ -149,12 +149,45 @@ impl PianoRoll {
                 );
             }
 
+            ui.separator();
+
             if self.dirty_edits {
-                ui.separator();
-                if ui.button("💾 Apply to cells").on_hover_text("Write piano roll edits back to notation cells").clicked() {
+                // Prominent coloured apply button when edits are pending
+                if ui
+                    .add(
+                        egui::Button::new(
+                            egui::RichText::new("💾 Apply to cells")
+                                .color(Color32::from_rgb(30, 30, 35)),
+                        )
+                        .fill(Color32::from_rgb(229, 192, 123)),
+                    )
+                    .on_hover_text(
+                        "Write piano roll edits back to notation cells.\n\
+                         Until applied, edits here do not affect playback or export.",
+                    )
+                    .clicked()
+                {
                     self.write_back_to_studio(studio);
                     self.dirty_edits = false;
                     self.sync_hash = 0;
+                }
+                ui.label(
+                    egui::RichText::new("● unsaved edits")
+                        .small()
+                        .color(Color32::from_rgb(229, 192, 123)),
+                );
+            } else {
+                // Always-visible sync button when clean (forces re-read from cells)
+                if ui
+                    .button("↓ Sync from cells")
+                    .on_hover_text(
+                        "Re-read all notation cells and update the piano roll.\n\
+                         Use this after editing cells in the Editor.",
+                    )
+                    .clicked()
+                {
+                    self.sync_hash = 0;
+                    self.sync_from_studio(studio);
                 }
             }
         });
@@ -473,6 +506,16 @@ impl PianoRoll {
             cell.source.push('\n');
         }
     }
+
+    #[cfg(test)]
+    fn test_sync_from_studio(&mut self, studio: &StudioState) {
+        self.sync_from_studio(studio);
+    }
+
+    #[cfg(test)]
+    fn test_write_back_to_studio(&self, studio: &mut StudioState) {
+        self.write_back_to_studio(studio);
+    }
 }
 
 fn snap_label(ticks: u32) -> &'static str {
@@ -524,5 +567,85 @@ fn velocity_to_dynamic(vel: u8) -> &'static str {
         105..=119 => "ff",
         120..=127 => "fff",
         _ => "mf",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::studio::Cell;
+
+    #[test]
+    fn sync_from_studio_rebuilds_notes_from_notation_cells() {
+        let mut studio = StudioState::new();
+        studio.cells.clear();
+
+        let mut melody = Cell::new_notation();
+        melody.source = "C4:q D4:8".into();
+        melody.instrument = "piano".into();
+        melody.channel = 0;
+        melody.velocity = 90;
+
+        let mut bass = Cell::new_notation();
+        bass.source = "C3:h".into();
+        bass.instrument = "bass".into();
+        bass.channel = 1;
+        bass.velocity = 70;
+
+        let mut markdown = Cell::new_markdown();
+        markdown.source = "ignore me".into();
+
+        studio.cells.push(melody);
+        studio.cells.push(bass);
+        studio.cells.push(markdown);
+
+        let mut roll = PianoRoll::new();
+        roll.test_sync_from_studio(&studio);
+
+        assert_eq!(roll.notes.len(), 3);
+        assert_eq!(roll.notes[0].track_idx, 0);
+        assert_eq!(roll.notes[1].track_idx, 0);
+        assert_eq!(roll.notes[2].track_idx, 1);
+        assert_eq!(roll.notes[0].velocity, 90);
+        assert_eq!(roll.notes[2].velocity, 70);
+    }
+
+    #[test]
+    fn write_back_to_studio_preserves_pragmas_and_writes_note_sequence() {
+        let mut studio = StudioState::new();
+        studio.cells.clear();
+
+        let mut cell = Cell::new_notation();
+        cell.source = "// @instrument violin\n// @track Lead\n\nC4:q\n".into();
+        cell.instrument = "violin".into();
+        cell.velocity = 80;
+        studio.cells.push(cell);
+
+        let mut roll = PianoRoll::new();
+        roll.notes = vec![
+            RollNote {
+                midi_note: 64,
+                start_tick: 0,
+                duration_ticks: 480,
+                velocity: 80,
+                track_idx: 0,
+                selected: false,
+            },
+            RollNote {
+                midi_note: 67,
+                start_tick: 480,
+                duration_ticks: 240,
+                velocity: 110,
+                track_idx: 0,
+                selected: false,
+            },
+        ];
+
+        roll.test_write_back_to_studio(&mut studio);
+
+        assert_eq!(
+            studio.cells[0].source,
+            "// @instrument violin\n// @track Lead\n\nE4:q G4:8!ff\n"
+        );
     }
 }

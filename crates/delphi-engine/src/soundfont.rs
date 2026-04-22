@@ -14,6 +14,7 @@ use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use rustysynth::{SoundFont, Synthesizer, SynthesizerSettings};
 
 use delphi_core::duration::TempoMap;
+use delphi_core::TrackState;
 
 /// Shared signal set when audio actually starts streaming.
 /// The GUI can observe this to synchronize visualizations with real audio output.
@@ -21,6 +22,138 @@ pub type AudioStartSignal = Arc<Mutex<Option<Instant>>>;
 
 /// Re-export NoteEvent as SfEvent for backward compatibility.
 pub use delphi_core::event::NoteEvent as SfEvent;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TrackCompatibilityIssueKind {
+    UnsupportedFormat,
+    MissingPreset,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TrackCompatibilityIssue {
+    pub track_name: String,
+    pub instrument: String,
+    pub channel: u8,
+    pub bank: u16,
+    pub program: u8,
+    pub reason: TrackCompatibilityIssueKind,
+    pub suggested_program: Option<u8>,
+    pub suggested_name: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct SoundFontCompatibilityReport {
+    pub preset_count: usize,
+    pub unsupported_format: bool,
+    pub issues: Vec<TrackCompatibilityIssue>,
+}
+
+pub fn audit_soundfont_compatibility(
+    sf_path: &Path,
+    tracks: &[TrackState],
+) -> Result<SoundFontCompatibilityReport, SfPlaybackError> {
+    if sf_path
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("sf3"))
+    {
+        return Ok(SoundFontCompatibilityReport {
+            preset_count: 0,
+            unsupported_format: true,
+            issues: tracks
+                .iter()
+                .map(track_compatibility_issue_unsupported)
+                .collect(),
+        });
+    }
+
+    let mut sf_file = File::open(sf_path)
+        .map_err(|e| SfPlaybackError::SoundFont(format!("Cannot open {}: {}", sf_path.display(), e)))?;
+    let sound_font = SoundFont::new(&mut sf_file)
+        .map_err(|e| SfPlaybackError::SoundFont(format!("Bad SF2: {:?}", e)))?;
+
+    let mut bank_presets: std::collections::HashMap<u16, Vec<(u8, String)>> =
+        std::collections::HashMap::new();
+    let presets: std::collections::HashSet<(u16, u8)> = sound_font
+        .get_presets()
+        .iter()
+        .filter_map(|preset| {
+            let bank = u16::try_from(preset.get_bank_number()).ok()?;
+            let patch = u8::try_from(preset.get_patch_number()).ok()?;
+            bank_presets
+                .entry(bank)
+                .or_default()
+                .push((patch, preset.get_name().to_string()));
+            Some((bank, patch))
+        })
+        .collect();
+
+    let issues = tracks
+        .iter()
+        .filter_map(|track| {
+            let (bank, program) = track_bank_and_program(track);
+            if presets.contains(&(bank, program)) {
+                return None;
+            }
+            let suggestion = nearest_preset(bank_presets.get(&bank), program);
+            Some(TrackCompatibilityIssue {
+                track_name: track.name.clone(),
+                instrument: track.instrument.clone(),
+                channel: track.channel,
+                bank,
+                program,
+                reason: TrackCompatibilityIssueKind::MissingPreset,
+                suggested_program: suggestion.as_ref().map(|(suggested_program, _)| *suggested_program),
+                suggested_name: suggestion.map(|(_, name)| name),
+            })
+        })
+        .collect();
+
+    Ok(SoundFontCompatibilityReport {
+        preset_count: presets.len(),
+        unsupported_format: false,
+        issues,
+    })
+}
+
+fn track_bank_and_program(track: &TrackState) -> (u16, u8) {
+    if track.channel == 9 {
+        (128, 0)
+    } else {
+        (0, track.program)
+    }
+}
+
+fn track_compatibility_issue_unsupported(track: &TrackState) -> TrackCompatibilityIssue {
+    let (bank, program) = track_bank_and_program(track);
+    TrackCompatibilityIssue {
+        track_name: track.name.clone(),
+        instrument: track.instrument.clone(),
+        channel: track.channel,
+        bank,
+        program,
+        reason: TrackCompatibilityIssueKind::UnsupportedFormat,
+        suggested_program: None,
+        suggested_name: None,
+    }
+}
+
+fn nearest_preset(presets: Option<&Vec<(u8, String)>>, target: u8) -> Option<(u8, String)> {
+    let presets = presets?;
+    let mut best: Option<(u8, String, u8)> = None;
+    for (program, name) in presets {
+        let distance = program.abs_diff(target);
+        match &best {
+            Some((best_program, _, best_distance))
+                if *best_distance < distance
+                    || (*best_distance == distance && *best_program <= *program) => {}
+            _ => {
+                best = Some((*program, name.clone(), distance));
+            }
+        }
+    }
+    best.map(|(program, name, _)| (program, name))
+}
 
 /// A raw MIDI message at a specific sample position.
 #[derive(Debug, Clone)]
@@ -525,6 +658,7 @@ impl std::error::Error for SfPlaybackError {}
 mod tests {
     use super::*;
     use delphi_core::duration::Tempo;
+    use delphi_core::TrackState;
 
     #[test]
     fn test_build_messages() {
@@ -562,5 +696,31 @@ mod tests {
         assert_eq!(pc.len(), 2);
         assert_eq!(pc[0].data1, 0);  // piano
         assert_eq!(pc[1].data1, 40); // violin
+    }
+
+    #[test]
+    fn audit_marks_sf3_as_unsupported_for_all_tracks() {
+        let tracks = vec![TrackState::new("Lead", "piano", 0, 0)];
+        let report = audit_soundfont_compatibility(Path::new("example.sf3"), &tracks).unwrap();
+
+        assert!(report.unsupported_format);
+        assert_eq!(report.issues.len(), 1);
+        assert_eq!(report.issues[0].reason, TrackCompatibilityIssueKind::UnsupportedFormat);
+        assert_eq!(report.issues[0].bank, 0);
+        assert_eq!(report.issues[0].program, 0);
+        assert_eq!(report.issues[0].suggested_program, None);
+        assert_eq!(report.issues[0].suggested_name, None);
+    }
+
+    #[test]
+    fn nearest_preset_prefers_closest_program() {
+        let presets = vec![
+            (32, "Bass".to_string()),
+            (40, "Violin".to_string()),
+            (48, "Strings".to_string()),
+        ];
+        let suggestion = nearest_preset(Some(&presets), 41).unwrap();
+        assert_eq!(suggestion.0, 40);
+        assert_eq!(suggestion.1, "Violin");
     }
 }
